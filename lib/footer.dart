@@ -4,6 +4,7 @@ import 'ClassementPage.dart';
 import 'course_page.dart';
 import 'circuit_map_page.dart';
 import 'theme_colors.dart';
+import 'map.dart';
 
 class Footer extends StatelessWidget {
   final int selectedIndex;

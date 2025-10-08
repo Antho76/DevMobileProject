@@ -5,6 +5,7 @@ import 'home_page.dart';
 import 'course_Page.dart';
 import 'circuit_map_page.dart';
 import 'theme_colors.dart';
+import 'map.dart';
 
 void main() {
   runApp(const MyApp());
@@ -42,7 +43,7 @@ class _MainPageState extends State<MainPage> {
     HomePage(),
     ClassementPage(),
     CoursePage(),
-    CircuitPage(),
+    MapScreen(),
   ];
 
   @override
