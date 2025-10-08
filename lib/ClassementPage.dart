@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'theme_colors.dart';
 
 class ClassementPage extends StatefulWidget {
   const ClassementPage({super.key});
@@ -64,47 +65,40 @@ class _ClassementPageState extends State<ClassementPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: ThemeColors.background,
       appBar: AppBar(
-        title: const Text("Classement F1 2025"),
-        backgroundColor: Colors.redAccent,
+        title: const Text("🏆 Classement F1 2025"),
+        backgroundColor: ThemeColors.appBar,
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : error.isNotEmpty
-          ? Center(child: Text(error))
+          ? Center(child: Text(error, style: const TextStyle(color: Colors.red)))
           : Column(
         children: [
-          // ---------------- Segmented / Switch ----------------
           Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ChoiceChip(
                   label: const Text("Pilotes"),
                   selected: showPilotes,
-                  onSelected: (val) =>
-                      setState(() => showPilotes = true),
+                  onSelected: (val) => setState(() => showPilotes = true),
                 ),
                 const SizedBox(width: 16),
                 ChoiceChip(
                   label: const Text("Constructeurs"),
                   selected: !showPilotes,
-                  onSelected: (val) =>
-                      setState(() => showPilotes = false),
+                  onSelected: (val) => setState(() => showPilotes = false),
                 ),
               ],
             ),
           ),
-
-          // ---------------- Liste ----------------
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.all(8),
-              itemCount: showPilotes
-                  ? pilotes.length
-                  : constructors.length,
+              itemCount: showPilotes ? pilotes.length : constructors.length,
               separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 if (showPilotes) {
@@ -112,28 +106,31 @@ class _ClassementPageState extends State<ClassementPage> {
                   final driver = p['driver'] ?? {};
                   final team = p['team'] ?? {};
                   return Card(
+                    color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: CircleAvatar(
-                          child: Text('${p['position']}')),
-                      title: Text(
-                          '${driver['name'] ?? ''} ${driver['surname'] ?? ''}'),
-                      subtitle: Text(team['teamName'] ?? ''),
-                      trailing: Text('${p['points']} pts'),
+                      leading: CircleAvatar(child: Text('${p['position']}')),
+                      title: Text('${driver['name'] ?? ''} ${driver['surname'] ?? ''}',
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(team['teamName'] ?? '',
+                          style: const TextStyle(color: Colors.white70)),
+                      trailing: Text('${p['points']} pts',
+                          style: const TextStyle(color: Colors.white)),
                     ),
                   );
                 } else {
                   final t = constructors[index];
                   final team = t['team'] ?? {};
                   return Card(
+                    color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: CircleAvatar(
-                          child: Text('${t['position']}')),
-                      title: Text(team['teamName'] ?? ''),
-                      subtitle:
-                      Text(''),
-                      trailing: Text('${t['points']} pts'),
+                      leading: CircleAvatar(child: Text('${t['position']}')),
+                      title: Text(team['teamName'] ?? '',
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: const Text(''),
+                      trailing: Text('${t['points']} pts',
+                          style: const TextStyle(color: Colors.white)),
                     ),
                   );
                 }
