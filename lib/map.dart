@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_osm_plugin/flutter_osm_plugin.dart';
 import 'package:http/http.dart' as http;
+import 'theme_colors.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -109,10 +110,12 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Carte OpenStreetMap - F1"),
-        backgroundColor: Colors.blueAccent,
-      ),
+        backgroundColor: ThemeColors.background,
+        appBar: AppBar(
+          title: const Text("🗺️ Circuits"),
+          backgroundColor: ThemeColors.appBar,
+          centerTitle: true,
+        ),
       body: Stack(
         children: [
           OSMFlutter(
