@@ -8,4 +8,9 @@ class ThemeColors {
   static const Color textPrimary = Colors.white;
   static const Color textSecondary = Colors.white70;
   static const Color accent = Colors.yellow;
+  static const Color blanc = Colors.white;
+  static const Color gris = Colors.white54;
+  static const Color desactive = Color(0xFF616161);
+  static const Color selected = Color(0xFF4a4459);
 }
+
