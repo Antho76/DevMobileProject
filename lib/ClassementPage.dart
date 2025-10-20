@@ -22,6 +22,8 @@ class _ClassementPageState extends State<ClassementPage> {
   bool pilotesAvailable = true;
   bool constructorsAvailable = true;
 
+  Map<String, String?> driverImages = {}; // Nom complet → URL image
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +38,7 @@ class _ClassementPageState extends State<ClassementPage> {
       constructors = [];
       pilotesAvailable = true;
       constructorsAvailable = true;
+      driverImages.clear();
     });
 
     // ⚡ Fetch pilotes
@@ -72,7 +75,7 @@ class _ClassementPageState extends State<ClassementPage> {
       pilotesAvailable = pilotes.isNotEmpty;
       constructorsAvailable = constructors.isNotEmpty;
 
-      // ⚡ Basculer automatiquement si une catégorie est vide
+      // Basculer automatiquement si une catégorie est vide
       if (showPilotes && !pilotesAvailable) showPilotes = constructorsAvailable;
       if (!showPilotes && !constructorsAvailable) showPilotes = pilotesAvailable;
 
@@ -82,22 +85,55 @@ class _ClassementPageState extends State<ClassementPage> {
 
       loading = false;
     });
+
+    // ⚡ Charger les images des pilotes en arrière-plan
+    for (var p in pilotes) {
+      final driver = p['driver'] ?? {};
+      final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}";
+      final url = driver['url'];
+      if (url != null) {
+        fetchDriverImage(url).then((imgUrl) {
+          if (imgUrl != null) {
+            setState(() {
+              driverImages[name] = imgUrl;
+            });
+          }
+        });
+      }
+    }
+  }
+
+  Future<String?> fetchDriverImage(String wikiUrl) async {
+    try {
+      final resp = await http.get(Uri.parse(wikiUrl));
+      if (resp.statusCode == 200) {
+        final html = resp.body;
+        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
+        if (match != null) return match.group(1);
+      }
+    } catch (e) {
+      print("Erreur fetchDriverImage: $e");
+    }
+    return null;
   }
 
   void showDriverDetailsPopin(BuildContext context, Map<String, dynamic> driver) {
+    final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}";
+    final imgUrl = driverImages[name];
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: ThemeColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          "${driver['name'] ?? ''} ${driver['surname'] ?? ''}",
-          style: const TextStyle(color: ThemeColors.textPrimary),
-        ),
+        title: Text(name, style: const TextStyle(color: ThemeColors.textPrimary)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (imgUrl != null)
+              Image.network(imgUrl, height: 120),
+            const SizedBox(height: 8),
             Text("Date de naissance : ${driver['birthday'] ?? 'N/A'}",
                 style: const TextStyle(color: ThemeColors.textSecondary)),
             Text("Nationalité : ${driver['nationality'] ?? 'N/A'}",
@@ -252,13 +288,20 @@ class _ClassementPageState extends State<ClassementPage> {
                   final p = pilotes[index];
                   final driver = p['driver'] ?? {};
                   final team = p['team'] ?? {};
+                  final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}";
+                  final imgUrl = driverImages[name];
                   return Card(
                     color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: CircleAvatar(child: Text('${p['position']}')),
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.transparent,
+                        backgroundImage:
+                        imgUrl != null ? NetworkImage(imgUrl) : null,
+                        child: imgUrl == null ? Text('${p['position']}') : null,
+                      ),
                       title: Text(
-                        '${driver['name'] ?? ''} ${driver['surname'] ?? ''}',
+                        name,
                         style: const TextStyle(color: ThemeColors.textPrimary),
                       ),
                       subtitle: Text(
@@ -400,8 +443,8 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
             ),
             TabBar(
               controller: _tabController,
-              labelColor: ThemeColors.blanc,
-              unselectedLabelColor: ThemeColors.gris,
+              labelColor: ThemeColors.textPrimary,
+              unselectedLabelColor: ThemeColors.textSecondary,
               indicatorColor: ThemeColors.selected,
               tabs: const [
                 Tab(icon: Icon(Icons.calendar_today), text: "Année"),
@@ -425,9 +468,7 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                       final year = years[index];
                       final selected = year == widget.initialYear;
                       return Material(
-                        color: selected
-                            ? ThemeColors.selected
-                            : ThemeColors.card,
+                        color: selected ? ThemeColors.selected : ThemeColors.card,
                         borderRadius: BorderRadius.circular(10),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(10),
@@ -436,8 +477,9 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                             child: Text(
                               "$year",
                               style: TextStyle(
-                                color: ThemeColors.blanc,
-                                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                                color: ThemeColors.textPrimary,
+                                fontWeight:
+                                selected ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
                           ),
@@ -451,7 +493,8 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                       ? Center(
                     child: Text(
                       error,
-                      style: const TextStyle(color: ThemeColors.textSecondary, fontSize: 16),
+                      style: const TextStyle(
+                          color: ThemeColors.textSecondary, fontSize: 16),
                     ),
                   )
                       : Column(
@@ -470,9 +513,10 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
                             ),
-                            hintStyle: const TextStyle(color: ThemeColors.gris),
+                            hintStyle:
+                            const TextStyle(color: ThemeColors.textSecondary),
                           ),
-                          style: const TextStyle(color: ThemeColors.blanc),
+                          style: const TextStyle(color: ThemeColors.textPrimary),
                         ),
                       ),
                       Expanded(
@@ -480,14 +524,16 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                             ? const Center(
                           child: Text(
                             "Aucun pilote trouvé.",
-                            style: TextStyle(color: ThemeColors.textSecondary),
+                            style:
+                            TextStyle(color: ThemeColors.textSecondary),
                           ),
                         )
                             : ListView.builder(
                           itemCount: filteredDrivers.length,
                           itemBuilder: (context, index) {
                             final d = filteredDrivers[index];
-                            final name = "${d["name"] ?? ""} ${d["surname"] ?? ""}";
+                            final name =
+                                "${d["name"] ?? ""} ${d["surname"] ?? ""}";
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: ThemeColors.selected,
@@ -495,11 +541,13 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                               ),
                               title: Text(
                                 name,
-                                style: const TextStyle(color: ThemeColors.textPrimary),
+                                style: const TextStyle(
+                                    color: ThemeColors.textPrimary),
                               ),
                               subtitle: Text(
                                 d["nationality"] ?? "",
-                                style: const TextStyle(color: ThemeColors.textSecondary),
+                                style: const TextStyle(
+                                    color: ThemeColors.textSecondary),
                               ),
                               onTap: () {
                                 Navigator.pop(context);
