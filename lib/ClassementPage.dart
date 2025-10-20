@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'theme_colors.dart';
+import 'package:url_launcher/url_launcher.dart'; // << ajout
 
 class ClassementPage extends StatefulWidget {
   const ClassementPage({super.key});
@@ -22,7 +23,8 @@ class _ClassementPageState extends State<ClassementPage> {
   bool pilotesAvailable = true;
   bool constructorsAvailable = true;
 
-  Map<String, String?> driverImages = {}; // Nom complet → URL image
+  // Clé stable -> URL image
+  final Map<String, String?> driverImages = {};
 
   @override
   void initState() {
@@ -30,52 +32,86 @@ class _ClassementPageState extends State<ClassementPage> {
     fetchData();
   }
 
-  Future<void> fetchData() async {
-    setState(() {
-      loading = true;
-      error = "";
-      pilotes = [];
-      constructors = [];
-      pilotesAvailable = true;
-      constructorsAvailable = true;
-      driverImages.clear();
-    });
+  String _driverKey(Map<String, dynamic> driver) {
+    final name = (driver['name'] ?? '').toString().trim();
+    final surname = (driver['surname'] ?? '').toString().trim();
+    return ('$name $surname').toLowerCase();
+  }
 
-    // ⚡ Fetch pilotes
+  // Helper pour ouvrir un lien externe (navigateur/app)
+  Future<void> _openDriverUrl(String? urlStr) async {
+    if (urlStr == null || urlStr.trim().isEmpty) return;
+    Uri? uri = Uri.tryParse(urlStr.trim());
+
+    // Garantir un schéma https si absent
+    if (uri == null || (uri.scheme.isEmpty)) {
+      uri = Uri.tryParse('https://${urlStr.trim()}');
+    }
+    if (uri == null) return;
+
+    // Essai 1: application externe (Chrome/Safari/Browser)
+    final okExternal = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    // Fallback: mode par défaut (ex. SFSafariViewController/Custom Tabs)
+    if (!okExternal) {
+      await launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
+      );
+    }
+  }
+
+  Future<void> fetchData() async {
+    if (mounted) {
+      setState(() {
+        loading = true;
+        error = "";
+        pilotes = [];
+        constructors = [];
+        pilotesAvailable = true;
+        constructorsAvailable = true;
+        driverImages.clear();
+      });
+    }
+
+    // Pilotes
     try {
       final piloteResp = await http.get(
         Uri.parse('https://f1api.dev/api/$selectedYear/drivers-championship'),
       );
       if (piloteResp.statusCode == 200) {
         final piloteData = json.decode(piloteResp.body);
-        pilotes = piloteData['drivers_championship'] ?? [];
+        pilotes = (piloteData['drivers_championship'] ?? []) as List<dynamic>;
       } else {
         pilotes = [];
       }
-    } catch (e) {
+    } catch (_) {
       pilotes = [];
     }
 
-    // ⚡ Fetch constructeurs
+    // Constructeurs
     try {
       final constructorResp = await http.get(
         Uri.parse('https://f1api.dev/api/$selectedYear/constructors-championship'),
       );
       if (constructorResp.statusCode == 200) {
         final constructorData = json.decode(constructorResp.body);
-        constructors = constructorData['constructors_championship'] ?? [];
+        constructors = (constructorData['constructors_championship'] ?? []) as List<dynamic>;
       } else {
         constructors = [];
       }
-    } catch (e) {
+    } catch (_) {
       constructors = [];
     }
 
+    if (!mounted) return;
     setState(() {
       pilotesAvailable = pilotes.isNotEmpty;
       constructorsAvailable = constructors.isNotEmpty;
 
-      // Basculer automatiquement si une catégorie est vide
       if (showPilotes && !pilotesAvailable) showPilotes = constructorsAvailable;
       if (!showPilotes && !constructorsAvailable) showPilotes = pilotesAvailable;
 
@@ -86,16 +122,17 @@ class _ClassementPageState extends State<ClassementPage> {
       loading = false;
     });
 
-    // ⚡ Charger les images des pilotes en arrière-plan
-    for (var p in pilotes) {
-      final driver = p['driver'] ?? {};
-      final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}";
+    // Charger les images des pilotes en arrière-plan
+    for (final p in pilotes) {
+      final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
+      final key = _driverKey(driver);
       final url = driver['url'];
-      if (url != null) {
-        fetchDriverImage(url).then((imgUrl) {
+      if (url is String && url.isNotEmpty) {
+        fetchDriverImageFromWikipedia(url).then((imgUrl) {
+          if (!mounted) return;
           if (imgUrl != null) {
             setState(() {
-              driverImages[name] = imgUrl;
+              driverImages[key] = imgUrl;
             });
           }
         });
@@ -103,7 +140,38 @@ class _ClassementPageState extends State<ClassementPage> {
     }
   }
 
-  Future<String?> fetchDriverImage(String wikiUrl) async {
+  // 1) Essaie l’API REST Wikipédia page/summary pour thumbnail.source
+  // 2) Fallback: og:image si nécessaire
+  Future<String?> fetchDriverImageFromWikipedia(String wikiUrl) async {
+    try {
+      final uri = Uri.parse(wikiUrl);
+      final segments = uri.pathSegments;
+      if (segments.isNotEmpty) {
+        final last = segments.last;
+        if (last.isNotEmpty) {
+          final title = Uri.encodeComponent(last);
+          final restUrl = 'https://${uri.host}/api/rest_v1/page/summary/$title';
+
+          final resp = await http.get(
+            Uri.parse(restUrl),
+            headers: {
+              'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)',
+            },
+          );
+          if (resp.statusCode == 200) {
+            final data = json.decode(resp.body);
+            final thumb = data['thumbnail'];
+            if (thumb is Map && thumb['source'] is String) {
+              return thumb['source'] as String;
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    // Fallback: og:image
     try {
       final resp = await http.get(Uri.parse(wikiUrl));
       if (resp.statusCode == 200) {
@@ -111,73 +179,133 @@ class _ClassementPageState extends State<ClassementPage> {
         final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
         if (match != null) return match.group(1);
       }
-    } catch (e) {
-      print("Erreur fetchDriverImage: $e");
+    } catch (_) {
+      // ignore
     }
     return null;
   }
 
-  void showDriverDetailsPopin(BuildContext context, Map<String, dynamic> driver) {
-    final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}";
-    final imgUrl = driverImages[name];
+  void showDriverDetailsPopin(BuildContext context, Map<String, dynamic> driver, {String? initialImageUrl}) {
+    final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}".trim();
+    final key = _driverKey(driver);
+    String? imgUrl = initialImageUrl ?? driverImages[key];
+    var requested = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: ThemeColors.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(name, style: const TextStyle(color: ThemeColors.textPrimary)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (imgUrl != null)
-              Image.network(imgUrl, height: 120),
-            const SizedBox(height: 8),
-            Text("Date de naissance : ${driver['birthday'] ?? 'N/A'}",
-                style: const TextStyle(color: ThemeColors.textSecondary)),
-            Text("Nationalité : ${driver['nationality'] ?? 'N/A'}",
-                style: const TextStyle(color: ThemeColors.textSecondary)),
-            Text("Numéro : ${driver['number'] ?? 'N/A'}",
-                style: const TextStyle(color: ThemeColors.textSecondary)),
-            GestureDetector(
-              onTap: () {
-                final url = driver['url'];
-                if (url != null) {
-                  // launchUrl(Uri.parse(url));
-                }
-              },
-              child: Text(
-                "Plus d'infos",
-                style: TextStyle(
-                    color: ThemeColors.selected,
-                    decoration: TextDecoration.underline),
-              ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          if (!requested && imgUrl == null && driver['url'] is String && (driver['url'] as String).isNotEmpty) {
+            requested = true;
+            Future.microtask(() async {
+              final fetched = await fetchDriverImageFromWikipedia(driver['url'] as String);
+              if (fetched != null) {
+                if (!mounted) return;
+                setStateDialog(() => imgUrl = fetched);
+                setState(() {
+                  driverImages[key] = fetched;
+                });
+              } else {
+                if (!mounted) return;
+                setState(() {
+                  driverImages[key] = null;
+                });
+              }
+            });
+          }
+
+          return AlertDialog(
+            backgroundColor: ThemeColors.card,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(name, style: const TextStyle(color: ThemeColors.textPrimary)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (imgUrl != null && imgUrl!.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      imgUrl!,
+                      height: 120,
+                      width: 120,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return SizedBox(
+                          height: 120,
+                          width: 120,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: progress.expectedTotalBytes != null
+                                  ? progress.cumulativeBytesLoaded /
+                                  (progress.expectedTotalBytes ?? 1)
+                                  : null,
+                            ),
+                          ),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 120,
+                        width: 120,
+                        alignment: Alignment.center,
+                        color: ThemeColors.background,
+                        child: const Icon(Icons.person, size: 48, color: ThemeColors.textSecondary),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    height: 120,
+                    width: 120,
+                    alignment: Alignment.center,
+                    color: ThemeColors.background,
+                    child: const Icon(Icons.person, size: 48, color: ThemeColors.textSecondary),
+                  ),
+                const SizedBox(height: 8),
+                Text("Date de naissance : ${driver['birthday'] ?? 'N/A'}",
+                    style: const TextStyle(color: ThemeColors.textSecondary)),
+                Text("Nationalité : ${driver['nationality'] ?? 'N/A'}",
+                    style: const TextStyle(color: ThemeColors.textSecondary)),
+                Text("Numéro : ${driver['number'] ?? 'N/A'}",
+                    style: const TextStyle(color: ThemeColors.textSecondary)),
+                GestureDetector(
+                  onTap: () => _openDriverUrl(driver['url'] as String?),
+                  child: Text(
+                    "Plus d'infos",
+                    style: TextStyle(
+                      color: ThemeColors.selected,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Fermer", style: TextStyle(color: ThemeColors.textPrimary)),
-          )
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Fermer", style: TextStyle(color: ThemeColors.textPrimary)),
+              )
+            ],
+          );
+        },
       ),
     );
   }
 
   Future<void> handleDriverSelection(Map<String, dynamic> driver) async {
-    final surname = driver['surname'] ?? '';
-    final name = driver['name'] ?? '';
+    final surname = (driver['surname'] ?? '').toString().trim();
+    final name = (driver['name'] ?? '').toString().trim();
     if (surname.isEmpty || name.isEmpty) return;
 
     try {
       final resp = await http.get(Uri.parse("https://f1api.dev/api/drivers/search?q=$surname"));
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        final drivers = data['drivers'] ?? [];
+        final drivers = (data['drivers'] ?? []) as List<dynamic>;
 
         if (drivers.isEmpty) {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Aucun pilote trouvé.")),
           );
@@ -185,16 +313,18 @@ class _ClassementPageState extends State<ClassementPage> {
           final matchedDriver = drivers.firstWhere(
                 (d) => (d['name'] == name && d['surname'] == surname),
             orElse: () => drivers[0],
-          );
+          ) as Map<String, dynamic>;
+          if (!mounted) return;
           showDriverDetailsPopin(context, matchedDriver);
         }
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Impossible de récupérer les détails du pilote.")),
         );
       }
     } catch (e) {
-      print("Erreur fetchDriverDetails: $e");
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Erreur lors de la récupération du pilote.")),
       );
@@ -212,9 +342,47 @@ class _ClassementPageState extends State<ClassementPage> {
     );
 
     if (chosen != null && chosen is int) {
+      if (!mounted) return;
       setState(() => selectedYear = chosen);
-      fetchData();
+      await fetchData();
     }
+  }
+
+  Widget _buildDriverAvatar({
+    required String driverKey,
+    required int position,
+    double size = 40,
+  }) {
+    final url = driverImages[driverKey];
+
+    if (url == null || url.isEmpty) {
+      return CircleAvatar(
+        radius: size / 2,
+        child: Text('$position'),
+      );
+    }
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return CircleAvatar(
+              radius: size / 2,
+              child: Text('$position'),
+            );
+          },
+          errorBuilder: (_, __, ___) => CircleAvatar(
+            radius: size / 2,
+            child: Text('$position'),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -248,7 +416,7 @@ class _ClassementPageState extends State<ClassementPage> {
           ? const Center(
         child: Text(
           "Aucune information disponible pour cette année.",
-          style: TextStyle(color: ThemeColors.textSecondary, fontSize: 16),
+          style: TextStyle(color: ThemeColors.textSecondary),
         ),
       )
           : Column(
@@ -285,50 +453,55 @@ class _ClassementPageState extends State<ClassementPage> {
               separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 if (showPilotes) {
-                  final p = pilotes[index];
-                  final driver = p['driver'] ?? {};
-                  final team = p['team'] ?? {};
-                  final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}";
-                  final imgUrl = driverImages[name];
+                  final p = pilotes[index] as Map<String, dynamic>;
+                  final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
+                  final team = (p['team'] ?? {}) as Map<String, dynamic>;
+                  final name =
+                  "${driver['name'] ?? ''} ${driver['surname'] ?? ''}".trim();
+                  final key = _driverKey(driver);
+                  final pos = (p['position'] ?? '').toString();
+                  final points = (p['points'] ?? '').toString();
+
                   return Card(
                     color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.transparent,
-                        backgroundImage:
-                        imgUrl != null ? NetworkImage(imgUrl) : null,
-                        child: imgUrl == null ? Text('${p['position']}') : null,
+                      leading: _buildDriverAvatar(
+                        driverKey: key,
+                        position: int.tryParse(pos) ?? 0,
+                        size: 40,
                       ),
                       title: Text(
                         name,
                         style: const TextStyle(color: ThemeColors.textPrimary),
                       ),
                       subtitle: Text(
-                        team['teamName'] ?? '',
+                        team['teamName']?.toString() ?? '',
                         style: const TextStyle(color: ThemeColors.textSecondary),
                       ),
                       trailing: Text(
-                        '${p['points']} pts',
+                        '$points pts',
                         style: const TextStyle(color: ThemeColors.textPrimary),
                       ),
                       onTap: () => handleDriverSelection(driver),
                     ),
                   );
                 } else {
-                  final t = constructors[index];
-                  final team = t['team'] ?? {};
+                  final t = constructors[index] as Map<String, dynamic>;
+                  final team = (t['team'] ?? {}) as Map<String, dynamic>;
+                  final pos = (t['position'] ?? '').toString();
+                  final points = (t['points'] ?? '').toString();
                   return Card(
                     color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: CircleAvatar(child: Text('${t['position']}')),
+                      leading: CircleAvatar(child: Text(pos)),
                       title: Text(
-                        team['teamName'] ?? '',
+                        team['teamName']?.toString() ?? '',
                         style: const TextStyle(color: ThemeColors.textPrimary),
                       ),
                       trailing: Text(
-                        '${t['points']} pts',
+                        '$points pts',
                         style: const TextStyle(color: ThemeColors.textPrimary),
                       ),
                     ),
@@ -366,13 +539,23 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
   bool loading = false;
   String error = "";
   List<dynamic> drivers = [];
-  TextEditingController searchController = TextEditingController();
+  final TextEditingController searchController = TextEditingController();
+
+  // Cache local des miniatures: clé pilote -> URL image
+  final Map<String, String?> _driverThumbs = {};
+  final Set<String> _inFlightThumbs = {};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     fetchDrivers();
+  }
+
+  String _driverKey(Map<String, dynamic> d) {
+    final name = (d["name"] ?? "").toString().trim();
+    final surname = (d["surname"] ?? "").toString().trim();
+    return ('$name $surname').toLowerCase();
   }
 
   Future<void> fetchDrivers() async {
@@ -386,7 +569,7 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         setState(() {
-          drivers = data["drivers"] ?? [];
+          drivers = (data["drivers"] ?? []) as List<dynamic>;
           loading = false;
         });
       } else {
@@ -401,6 +584,106 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
         loading = false;
       });
     }
+  }
+
+  Future<String?> _fetchDriverImageFromWikipedia(String wikiUrl) async {
+    try {
+      final uri = Uri.parse(wikiUrl);
+      final segments = uri.pathSegments;
+      if (segments.isNotEmpty) {
+        final title = Uri.encodeComponent(segments.last);
+        final restUrl = 'https://${uri.host}/api/rest_v1/page/summary/$title';
+        final resp = await http.get(
+          Uri.parse(restUrl),
+          headers: {
+            'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)',
+          },
+        );
+        if (resp.statusCode == 200) {
+          final data = json.decode(resp.body);
+          final thumb = data['thumbnail'];
+          if (thumb is Map && thumb['source'] is String) {
+            return thumb['source'] as String;
+          }
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    try {
+      final resp = await http.get(Uri.parse(wikiUrl));
+      if (resp.statusCode == 200) {
+        final html = resp.body;
+        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
+        if (match != null) return match.group(1);
+      }
+    } catch (_) {
+      // ignore
+    }
+    return null;
+  }
+
+  Future<void> _ensureThumbFor(Map<String, dynamic> d) async {
+    final key = _driverKey(d);
+    if (_driverThumbs.containsKey(key) || _inFlightThumbs.contains(key)) return;
+
+    final url = d['url'];
+    if (url is! String || url.isEmpty) {
+      _driverThumbs[key] = null;
+      return;
+    }
+
+    _inFlightThumbs.add(key);
+    try {
+      final img = await _fetchDriverImageFromWikipedia(url);
+      if (!mounted) return;
+      setState(() {
+        _driverThumbs[key] = img;
+      });
+    } finally {
+      _inFlightThumbs.remove(key);
+    }
+  }
+
+  Widget _buildSearchAvatar(Map<String, dynamic> d) {
+    final key = _driverKey(d);
+    _ensureThumbFor(d);
+
+    final img = _driverThumbs[key];
+    const double size = 40;
+
+    if (img == null || img.isEmpty) {
+      return CircleAvatar(
+        radius: size / 2,
+        backgroundColor: ThemeColors.selected,
+        child: const Icon(Icons.person_outline, color: Colors.white),
+      );
+    }
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: Image.network(
+          img,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return CircleAvatar(
+              radius: size / 2,
+              backgroundColor: ThemeColors.selected,
+              child: const Icon(Icons.person_outline, color: Colors.white),
+            );
+          },
+          errorBuilder: (_, __, ___) => CircleAvatar(
+            radius: size / 2,
+            backgroundColor: ThemeColors.selected,
+            child: const Icon(Icons.person_outline, color: Colors.white),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -478,8 +761,7 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                               "$year",
                               style: TextStyle(
                                 color: ThemeColors.textPrimary,
-                                fontWeight:
-                                selected ? FontWeight.bold : FontWeight.normal,
+                                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
                           ),
@@ -531,21 +813,18 @@ class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStat
                             : ListView.builder(
                           itemCount: filteredDrivers.length,
                           itemBuilder: (context, index) {
-                            final d = filteredDrivers[index];
+                            final d = filteredDrivers[index] as Map<String, dynamic>;
                             final name =
-                                "${d["name"] ?? ""} ${d["surname"] ?? ""}";
+                            "${d["name"] ?? ""} ${d["surname"] ?? ""}".trim();
                             return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: ThemeColors.selected,
-                                child: const Icon(Icons.person_outline),
-                              ),
+                              leading: _buildSearchAvatar(d),
                               title: Text(
                                 name,
                                 style: const TextStyle(
                                     color: ThemeColors.textPrimary),
                               ),
                               subtitle: Text(
-                                d["nationality"] ?? "",
+                                d["nationality"]?.toString() ?? "",
                                 style: const TextStyle(
                                     color: ThemeColors.textSecondary),
                               ),
