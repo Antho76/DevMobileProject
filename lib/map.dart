@@ -57,6 +57,7 @@ class _MapScreenState extends State<MapScreen> {
         final circuit = circuitData['circuitName'] ?? '';
         final city = circuitData['city'] ?? '';
         final country = circuitData['country'] ?? '';
+        final date = race['schedule']['race']['date'];
 
         // 2️⃣ Géocodage via Nominatim
         final coords = await getCoordinates(circuit, city, country);
@@ -66,6 +67,7 @@ class _MapScreenState extends State<MapScreen> {
             'circuit': circuit,
             'city': city,
             'country': country,
+            'date': date,
             'lat': coords['lat'],
             'lng': coords['lng'],
           });
@@ -150,17 +152,32 @@ class _MapScreenState extends State<MapScreen> {
             onGeoPointClicked: (geoPoint) {
               final race = races.firstWhere((r) =>
               r['lat'] == geoPoint.latitude && r['lng'] == geoPoint.longitude);
+              String formattedDate = "Date inconnue";
+              if (race['date'] != null) {
+                final date = DateTime.parse(race['date']);
+                formattedDate =
+                "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}";
+              }
               showDialog(
                 context: context,
                 builder: (_) => AlertDialog(
                   title: Text(race['name']),
-                  content: Text("${race['circuit']}\n${race['city']}, ${race['country']}"),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("${race['circuit']}"),
+                      Text("${race['city']}, ${race['country']}"),
+                      const SizedBox(height: 8),
+                      Text("📅 Date : $formattedDate"),
+                    ],
+                  ),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.of(context).pop(), // 🔹 ferme la popup
+                      onPressed: () => Navigator.of(context).pop(),
                       child: const Text(
                         "Fermer",
-                        style: TextStyle(color: Colors.blue), // couleur optionnelle
+                        style: TextStyle(color: Colors.blue),
                       ),
                     ),
                   ],

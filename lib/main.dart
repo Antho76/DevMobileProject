@@ -3,12 +3,16 @@ import 'footer.dart';
 import 'ClassementPage.dart';
 import 'home_page.dart';
 import 'course_Page.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'circuit_map_page.dart';
 import 'theme_colors.dart';
 import 'map.dart';
 
-void main() {
+Future <void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('fr_FR', null);
   runApp(const MyApp());
+
 }
 
 class MyApp extends StatelessWidget {
@@ -39,10 +43,11 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
 
+
   final List<Widget> _pages = const [
     HomePage(),
     ClassementPage(),
-    CoursePage(),
+    GrandPrixListPage(),
     MapScreen(),
   ];
 
