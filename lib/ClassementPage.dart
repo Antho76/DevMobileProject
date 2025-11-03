@@ -23,11 +23,8 @@ class _ClassementPageState extends State<ClassementPage> {
   bool pilotesAvailable = true;
   bool constructorsAvailable = true;
 
-  // Pilote -> URL photo
+  // Pilote -> URL photo (conservé)
   final Map<String, String?> driverImages = {};
-  // Team -> URL logo
-  final Map<String, String?> teamLogos = {};
-  final Set<String> _inFlightTeams = {};
 
   @override
   void initState() {
@@ -40,8 +37,6 @@ class _ClassementPageState extends State<ClassementPage> {
     final surname = (driver['surname'] ?? '').toString().trim();
     return ('$name $surname').toLowerCase();
   }
-
-  String _teamKey(String? name) => (name ?? '').trim().toLowerCase();
 
   Future<void> _openDriverUrl(String? urlStr) async {
     if (urlStr == null || urlStr.trim().isEmpty) return;
@@ -67,8 +62,6 @@ class _ClassementPageState extends State<ClassementPage> {
         pilotesAvailable = true;
         constructorsAvailable = true;
         driverImages.clear();
-        teamLogos.clear();
-        _inFlightTeams.clear();
       });
     }
 
@@ -117,7 +110,7 @@ class _ClassementPageState extends State<ClassementPage> {
       loading = false;
     });
 
-    // Charger images pilotes + logos équipes en arrière-plan
+    // Charger les images des pilotes en arrière-plan
     for (final p in pilotes) {
       final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
       final key = _driverKey(driver);
@@ -130,16 +123,6 @@ class _ClassementPageState extends State<ClassementPage> {
           }
         });
       }
-
-      final team = (p['team'] ?? {}) as Map<String, dynamic>;
-      final teamName = team['teamName']?.toString();
-      _ensureTeamLogo(teamName);
-    }
-
-    for (final t in constructors) {
-      final team = (t['team'] ?? {}) as Map<String, dynamic>;
-      final teamName = team['teamName']?.toString();
-      _ensureTeamLogo(teamName);
     }
   }
 
@@ -178,96 +161,6 @@ class _ClassementPageState extends State<ClassementPage> {
         if (match != null) return match.group(1);
       }
     } catch (_) {}
-    return null;
-  }
-
-  // —————————————————— Logos d’écuries
-  // Stratégie:
-  // 1) Construit un titre Wikipédia probable à partir du nom d’équipe.
-  // 2) Tente REST summary pour miniature.
-  // 3) Fallback: og:image de la page.
-  // 4) Dernier recours: catégorie Commons des logos (si nécessaire à terme).
-  Future<void> _ensureTeamLogo(String? teamName) async {
-    final key = _teamKey(teamName);
-    if (key.isEmpty) return;
-    if (teamLogos.containsKey(key) || _inFlightTeams.contains(key)) return;
-
-    _inFlightTeams.add(key);
-    try {
-      final wikiTitle = _guessWikipediaTitleForTeam(teamName);
-      final wikiUrl = 'https://en.wikipedia.org/wiki/$wikiTitle';
-
-      final logo = await _fetchTeamLogoFromWikipedia(wikiUrl);
-      if (!mounted) return;
-      setState(() => teamLogos[key] = logo);
-    } finally {
-      _inFlightTeams.remove(key);
-    }
-  }
-
-  String _guessWikipediaTitleForTeam(String? teamName) {
-    final raw = (teamName ?? '').trim();
-    // Cas courants actuels
-    final map = <String, String>{
-      'scuderia ferrari': 'Scuderia_Ferrari',
-      'mercedes': 'Mercedes_AMG_Petronas_F1_Team',
-      'red bull racing': 'Red_Bull_Racing',
-      'oracle red bull racing': 'Red_Bull_Racing',
-      'mclaren': 'McLaren',
-      'aston martin': 'Aston_Martin_in_Formula_One',
-      'alpine': 'Alpine_F1_Team',
-      'rb': 'RB_Formula_One_Team',
-      'stake f1 team kick sauber': 'Stake_F1_Team_Kick_Sauber',
-      'sauber': 'Sauber_Motorsport',
-      'haas': 'Haas_F1_Team',
-      'williams': 'Williams_Grand_Prix_Engineering',
-      'alphatauri': 'Scuderia_AlphaTauri',
-      'alfa romeo': 'Alfa_Romeo_in_Formula_One',
-      'renault': 'Renault_in_Formula_One',
-      'toro rosso': 'Scuderia_Toro_Rosso',
-    };
-    final key = raw.toLowerCase();
-    if (map.containsKey(key)) return map[key]!;
-    // Par défaut: remplacer espaces par underscore
-    return raw.replaceAll(' ', '_');
-  }
-
-  Future<String?> _fetchTeamLogoFromWikipedia(String wikiUrl) async {
-    // Essai REST summary (souvent renvoie un logo pour les équipes)
-    try {
-      final uri = Uri.parse(wikiUrl);
-      final host = uri.host;
-      final title = Uri.encodeComponent(uri.pathSegments.last);
-      final restUrl = 'https://$host/api/rest_v1/page/summary/$title';
-      final resp = await http.get(
-        Uri.parse(restUrl),
-        headers: {'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'},
-      );
-      if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        // Certains articles ont thumbnail du logo; sinon "originalimage"
-        final thumb = data['thumbnail'];
-        if (thumb is Map && thumb['source'] is String) {
-          return thumb['source'] as String;
-        }
-        final orig = data['originalimage'];
-        if (orig is Map && orig['source'] is String) {
-          return orig['source'] as String;
-        }
-      }
-    } catch (_) {}
-
-    // Fallback og:image
-    try {
-      final resp = await http.get(Uri.parse(wikiUrl));
-      if (resp.statusCode == 200) {
-        final html = resp.body;
-        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
-        if (match != null) return match.group(1);
-      }
-    } catch (_) {}
-
-    // Dernier recours possible: Commons catégorie logos (à implémenter si besoin)
     return null;
   }
 
@@ -313,10 +206,7 @@ class _ClassementPageState extends State<ClassementPage> {
                       width: 120,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _placeholderBox(),
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return _placeholderBox();
-                      },
+                      loadingBuilder: (context, child, progress) => _placeholderBox(),
                     ),
                   )
                 else
@@ -332,10 +222,7 @@ class _ClassementPageState extends State<ClassementPage> {
                   onTap: () => _openDriverUrl(driver['url'] as String?),
                   child: Text(
                     "Plus d'infos",
-                    style: TextStyle(
-                      color: ThemeColors.selected,
-                      decoration: TextDecoration.underline,
-                    ),
+                    style: TextStyle(color: ThemeColors.selected, decoration: TextDecoration.underline),
                   ),
                 ),
               ],
@@ -438,84 +325,13 @@ class _ClassementPageState extends State<ClassementPage> {
           fit: BoxFit.cover,
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
-            return CircleAvatar(
-              radius: size / 2,
-              child: Text('$position'),
-            );
+            return CircleAvatar(radius: size / 2, child: Text('$position'));
           },
-          errorBuilder: (_, __, ___) => CircleAvatar(
-            radius: size / 2,
-            child: Text('$position'),
-          ),
+          errorBuilder: (_, __, ___) => CircleAvatar(radius: size / 2, child: Text('$position')),
         ),
       ),
     );
   }
-
-  Widget _buildTeamChip(String? teamName) {
-    final key = _teamKey(teamName);
-    final logo = teamLogos[key];
-    final initials = (teamName ?? '')
-        .split(RegExp(r'[\s-]+'))
-        .where((s) => s.isNotEmpty)
-        .take(2)
-        .map((s) => s.characters.first.toUpperCase())
-        .join();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: ThemeColors.background,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: ThemeColors.desactive),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (logo != null && logo.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                logo,
-                height: 18,
-                width: 18,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => _teamInitials(initials),
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return _teamInitials(initials);
-                },
-              ),
-            )
-          else
-            _teamInitials(initials),
-          const SizedBox(width: 6),
-          Text(
-            teamName ?? '',
-            style: const TextStyle(color: ThemeColors.textSecondary, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _teamInitials(String initials) => Container(
-    height: 18,
-    width: 18,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: ThemeColors.desactive,
-      borderRadius: BorderRadius.circular(4),
-    ),
-    child: Text(
-      initials,
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-      ),
-    ),
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -561,18 +377,15 @@ class _ClassementPageState extends State<ClassementPage> {
                 ChoiceChip(
                   label: const Text("Pilotes"),
                   selected: showPilotes,
-                  onSelected: pilotesAvailable
-                      ? (val) => setState(() => showPilotes = true)
-                      : null,
+                  onSelected: pilotesAvailable ? (val) => setState(() => showPilotes = true) : null,
                   disabledColor: ThemeColors.desactive,
                 ),
                 const SizedBox(width: 16),
                 ChoiceChip(
                   label: const Text("Constructeurs"),
                   selected: !showPilotes,
-                  onSelected: constructorsAvailable
-                      ? (val) => setState(() => showPilotes = false)
-                      : null,
+                  onSelected:
+                  constructorsAvailable ? (val) => setState(() => showPilotes = false) : null,
                   disabledColor: ThemeColors.desactive,
                 ),
               ],
@@ -607,7 +420,10 @@ class _ClassementPageState extends State<ClassementPage> {
                         name,
                         style: const TextStyle(color: ThemeColors.textPrimary),
                       ),
-                      subtitle: _buildTeamChip(teamName),
+                      subtitle: Text(
+                        teamName ?? '',
+                        style: const TextStyle(color: ThemeColors.textSecondary),
+                      ),
                       trailing: Text(
                         '$points pts',
                         style: const TextStyle(color: ThemeColors.textPrimary),
@@ -626,7 +442,7 @@ class _ClassementPageState extends State<ClassementPage> {
                     color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: _buildTeamAvatar(teamName, pos),
+                      leading: CircleAvatar(child: Text(pos)),
                       title: Text(
                         teamName ?? '',
                         style: const TextStyle(color: ThemeColors.textPrimary),
@@ -645,33 +461,9 @@ class _ClassementPageState extends State<ClassementPage> {
       ),
     );
   }
-
-  Widget _buildTeamAvatar(String? teamName, String pos) {
-    final key = _teamKey(teamName);
-    final logo = teamLogos[key];
-
-    if (logo == null || logo.isEmpty) {
-      return CircleAvatar(child: Text(pos));
-    }
-    return SizedBox(
-      width: 40,
-      height: 40,
-      child: ClipOval(
-        child: Image.network(
-          logo,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => CircleAvatar(child: Text(pos)),
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return CircleAvatar(child: Text(pos));
-          },
-        ),
-      ),
-    );
-  }
 }
 
-// —————————————————— SearchPopin (inchangée sauf import)
+// —————————————————— SearchPopin (inchangée, pas d’images d’écurie)
 class SearchPopin extends StatefulWidget {
   final int minYear;
   final int? initialYear;
