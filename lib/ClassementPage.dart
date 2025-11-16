@@ -491,7 +491,20 @@ class _ClassementPageState extends State<ClassementPage> {
   }
 
   Future<void> _openSearchPopin() async {
-    // ta SearchPopin existante
+    final chosen = await showDialog<dynamic>(
+      context: context,
+      builder: (context) => SearchPopin(
+        minYear: 1950,
+        initialYear: selectedYear,
+        onDriverSelected: handleDriverSelection,
+      ),
+    );
+
+    if (chosen != null && chosen is int) {
+      if (!mounted) return;
+      setState(() => selectedYear = chosen);
+      await fetchData();
+    }
   }
 
   Widget _buildDriverAvatar({
@@ -971,6 +984,319 @@ class _ClassementPageState extends State<ClassementPage> {
             if (progress == null) return child;
             return CircleAvatar(child: Text(pos));
           },
+        ),
+      ),
+    );
+  }
+
+}
+// —————————————————— SearchPopin (inchangée sauf import)
+class SearchPopin extends StatefulWidget {
+  final int minYear;
+  final int? initialYear;
+  final Function(Map<String, dynamic> driver)? onDriverSelected;
+
+  const SearchPopin({
+    super.key,
+    required this.minYear,
+    this.initialYear,
+    this.onDriverSelected,
+  });
+
+  @override
+  State<SearchPopin> createState() => _SearchPopinState();
+}
+
+class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool loading = false;
+  String error = "";
+  List<dynamic> drivers = [];
+  final TextEditingController searchController = TextEditingController();
+
+  final Map<String, String?> _driverThumbs = {};
+  final Set<String> _inFlightThumbs = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    fetchDrivers();
+  }
+
+  String _driverKey(Map<String, dynamic> d) {
+    final name = (d["name"] ?? "").toString().trim();
+    final surname = (d["surname"] ?? "").toString().trim();
+    return ('$name $surname').toLowerCase();
+  }
+
+  Future<void> fetchDrivers() async {
+    setState(() {
+      loading = true;
+      error = "";
+    });
+
+    try {
+      final resp = await http.get(Uri.parse("https://f1api.dev/api/drivers?limit=1000000"));
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        setState(() {
+          drivers = (data["drivers"] ?? []) as List<dynamic>;
+          loading = false;
+        });
+      } else {
+        setState(() {
+          error = "Impossible de récupérer la liste des pilotes.";
+          loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        error = "Erreur lors du chargement des pilotes.";
+        loading = false;
+      });
+    }
+  }
+
+  Future<String?> _fetchDriverImageFromWikipedia(String wikiUrl) async {
+    try {
+      final uri = Uri.parse(wikiUrl);
+      final title = Uri.encodeComponent(uri.pathSegments.last);
+      final restUrl = 'https://${uri.host}/api/rest_v1/page/summary/$title';
+      final resp = await http.get(
+        Uri.parse(restUrl),
+        headers: {'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'},
+      );
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        final thumb = data['thumbnail'];
+        if (thumb is Map && thumb['source'] is String) return thumb['source'] as String;
+      }
+    } catch (_) {}
+
+    try {
+      final resp = await http.get(Uri.parse(wikiUrl));
+      if (resp.statusCode == 200) {
+        final html = resp.body;
+        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
+        if (match != null) return match.group(1);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _ensureThumbFor(Map<String, dynamic> d) async {
+    final key = _driverKey(d);
+    if (_driverThumbs.containsKey(key) || _inFlightThumbs.contains(key)) return;
+
+    final url = d['url'];
+    if (url is! String || url.isEmpty) {
+      _driverThumbs[key] = null;
+      return;
+    }
+
+    _inFlightThumbs.add(key);
+    try {
+      final img = await _fetchDriverImageFromWikipedia(url);
+      if (!mounted) return;
+      setState(() => _driverThumbs[key] = img);
+    } finally {
+      _inFlightThumbs.remove(key);
+    }
+  }
+
+  Widget _buildSearchAvatar(Map<String, dynamic> d) {
+    final key = _driverKey(d);
+    _ensureThumbFor(d);
+
+    final img = _driverThumbs[key];
+    const double size = 40;
+
+    if (img == null || img.isEmpty) {
+      return CircleAvatar(
+        radius: size / 2,
+        backgroundColor: ThemeColors.selected,
+        child: const Icon(Icons.person_outline, color: Colors.white),
+      );
+    }
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: Image.network(
+          img,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return CircleAvatar(
+              radius: size / 2,
+              backgroundColor: ThemeColors.selected,
+              child: const Icon(Icons.person_outline, color: Colors.white),
+            );
+          },
+          errorBuilder: (_, __, ___) => CircleAvatar(
+            radius: size / 2,
+            backgroundColor: ThemeColors.selected,
+            child: const Icon(Icons.person_outline, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int maxYear = DateTime.now().year;
+    final years = List<int>.generate(maxYear - widget.minYear + 1, (i) => maxYear - i);
+    final filteredDrivers = searchController.text.isEmpty
+        ? drivers
+        : drivers
+        .where((d) =>
+    (d["name"] ?? "").toLowerCase().contains(searchController.text.toLowerCase()) ||
+        (d["surname"] ?? "").toLowerCase().contains(searchController.text.toLowerCase()))
+        .toList();
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 12,
+      backgroundColor: ThemeColors.card,
+      child: SizedBox(
+        width: 340,
+        height: 420,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      "Rechercher",
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            TabBar(
+              controller: _tabController,
+              labelColor: ThemeColors.textPrimary,
+              unselectedLabelColor: ThemeColors.textSecondary,
+              indicatorColor: ThemeColors.selected,
+              tabs: const [
+                Tab(icon: Icon(Icons.calendar_today), text: "Année"),
+                Tab(icon: Icon(Icons.person), text: "Pilote"),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  GridView.builder(
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 1.6,
+                    ),
+                    itemCount: years.length,
+                    itemBuilder: (context, index) {
+                      final year = years[index];
+                      final selected = year == widget.initialYear;
+                      return Material(
+                        color: selected ? ThemeColors.selected : ThemeColors.card,
+                        borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => Navigator.pop(context, year),
+                          child: Center(
+                            child: Text(
+                              "$year",
+                              style: TextStyle(
+                                color: ThemeColors.textPrimary,
+                                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : error.isNotEmpty
+                      ? Center(
+                    child: Text(
+                      error,
+                      style: const TextStyle(color: ThemeColors.textSecondary, fontSize: 16),
+                    ),
+                  )
+                      : Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: "Rechercher un pilote...",
+                            filled: true,
+                            fillColor: ThemeColors.background,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            hintStyle: const TextStyle(color: ThemeColors.textSecondary),
+                          ),
+                          style: const TextStyle(color: ThemeColors.textPrimary),
+                        ),
+                      ),
+                      Expanded(
+                        child: filteredDrivers.isEmpty
+                            ? const Center(
+                          child: Text(
+                            "Aucun pilote trouvé.",
+                            style: TextStyle(color: ThemeColors.textSecondary),
+                          ),
+                        )
+                            : ListView.builder(
+                          itemCount: filteredDrivers.length,
+                          itemBuilder: (context, index) {
+                            final d = filteredDrivers[index] as Map<String, dynamic>;
+                            final name = "${d["name"] ?? ""} ${d["surname"] ?? ""}".trim();
+                            return ListTile(
+                              leading: _buildSearchAvatar(d),
+                              title: Text(
+                                name,
+                                style: const TextStyle(color: ThemeColors.textPrimary),
+                              ),
+                              subtitle: Text(
+                                d["nationality"]?.toString() ?? "",
+                                style: const TextStyle(color: ThemeColors.textSecondary),
+                              ),
+                              onTap: () {
+                                Navigator.pop(context);
+                                if (widget.onDriverSelected != null) {
+                                  widget.onDriverSelected!(d);
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
