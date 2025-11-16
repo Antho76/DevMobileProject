@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:auto_size_text/auto_size_text.dart';
 
 class GrandPrixListPage extends StatefulWidget {
   const GrandPrixListPage({super.key});
@@ -130,8 +131,8 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
               final city = race['circuit']?['city'] ?? '';
               final raceName = race['raceName'] ?? 'Grand Prix';
               final url = race['url'];
-              final mainCardWidth = isMobile? screenWidth*0.80 : screenWidth * 0.4;
-              final dateBannerWidth = isMobile? mainCardWidth*0.8 : 360.0;
+              final mainCardWidth = isMobile? screenWidth*0.75 : screenWidth * 0.4;
+              final dateBannerWidth = isMobile? mainCardWidth*0.75 : 360.0;
 
               return IntrinsicHeight(
               child: Row(
@@ -171,10 +172,10 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
                       ),
                     ),
                   ),
+                  Transform.translate(
+                    offset: isMobile? const Offset(-28, 0) : const Offset(0,0),
 
-
-                  // 🏁 Bloc principal avec découpe gauche
-                  SizedBox(
+                  child : SizedBox(
                     width: mainCardWidth, // 75% de la largeur écran
                     child: ClipPath(
                       clipper: LeftCutClipper(),
@@ -253,13 +254,20 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
                                                     ),
                                                   ),
                                                 const SizedBox(width: 8),
-                                                Text(
-                                                  country.toUpperCase(),
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 18,
+                                                ConstrainedBox(
+                                                  constraints: BoxConstraints(maxWidth: screenWidth * 0.3),
+                                                  child: FittedBox(
+                                                    fit: BoxFit.scaleDown,
+                                                    alignment: Alignment.centerLeft,
+                                                    child: Text(
+                                                      country.toUpperCase(),
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 18,
                                                   ),
+                                                ),
+                                                ),
                                                 ),
                                               ],
                                             );
@@ -286,6 +294,7 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
                         ),
                       ),
                     ),
+                  ),
                   ),
                 ],
               ),
