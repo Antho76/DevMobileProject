@@ -7,16 +7,25 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'circuit_map_page.dart';
 import 'theme_colors.dart';
 import 'map.dart';
+import 'PreferencesPage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future <void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('fr_FR', null);
-  runApp(const MyApp());
+  final prefs = await SharedPreferences.getInstance();
+
+  final hasDriver = prefs.containsKey("favorite_driver");
+  final hasTeam = prefs.containsKey("favorite_team");
+
+  final shouldShowPreferences = !(hasDriver && hasTeam);
+  runApp(MyApp(showPreferences: shouldShowPreferences));
 
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool showPreferences;
+  const MyApp({super.key, required this.showPreferences});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +36,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: ThemeColors.background,
         brightness: Brightness.dark,
       ),
-      home: const MainPage(),
+      home: showPreferences ? const PreferencesPage() : const MainPage(),
       debugShowCheckedModeBanner: false,
     );
   }
