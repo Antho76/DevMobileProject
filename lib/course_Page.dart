@@ -86,11 +86,11 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
       backgroundColor: const Color(0xFF0B0C10),
       appBar: AppBar(
         title: const Text(
-          "Calendrier F1 2025",
+          "🗓️ Calendrier F1 2025",
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        backgroundColor: Colors.redAccent,
+        backgroundColor: Color(0xFF1A1A1A),
       ),
       body: FutureBuilder<List<dynamic>>(
         future: _racesFuture,
