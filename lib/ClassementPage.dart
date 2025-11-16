@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'LikeHeart.dart';
 import 'PreferencesPage.dart';
 import 'theme_colors.dart';
 
@@ -18,7 +19,9 @@ class _ClassementPageState extends State<ClassementPage> {
   bool loading = true;
   String error = "";
   bool showPilotes = true;
-  int selectedYear = DateTime.now().year;
+  int selectedYear = DateTime
+      .now()
+      .year;
 
   List<dynamic> pilotes = [];
   List<dynamic> constructors = [];
@@ -28,6 +31,7 @@ class _ClassementPageState extends State<ClassementPage> {
 
   // Pilote -> URL photo
   final Map<String, String?> driverImages = {};
+
   // Team -> URL logo
   final Map<String, String?> teamLogos = {};
   final Set<String> _inFlightTeams = {};
@@ -66,7 +70,9 @@ class _ClassementPageState extends State<ClassementPage> {
   String _teamKey(String? name) => (name ?? '').trim().toLowerCase();
 
   Future<void> _openDriverUrl(String? urlStr) async {
-    if (urlStr == null || urlStr.trim().isEmpty) return;
+    if (urlStr == null || urlStr
+        .trim()
+        .isEmpty) return;
     Uri? uri = Uri.tryParse(urlStr.trim());
     if (uri == null || uri.scheme.isEmpty) {
       uri = Uri.tryParse('https://${urlStr.trim()}');
@@ -328,8 +334,7 @@ class _ClassementPageState extends State<ClassementPage> {
     return null;
   }
 
-  void showDriverDetailsPopin(
-      BuildContext context,
+  void showDriverDetailsPopin(BuildContext context,
       Map<String, dynamic> driver, {
         String? initialImageUrl,
       }) {
@@ -340,109 +345,111 @@ class _ClassementPageState extends State<ClassementPage> {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) {
-          if (!requested &&
-              imgUrl == null &&
-              driver['url'] is String &&
-              (driver['url'] as String).isNotEmpty) {
-            requested = true;
-            Future.microtask(() async {
-              final fetched = await fetchDriverImageFromWikipedia(
-                driver['url'] as String,
-              );
-              if (fetched != null) {
-                if (!mounted) return;
-                setStateDialog(() => imgUrl = fetched);
-                setState(() => driverImages[key] = fetched);
-              } else {
-                if (!mounted) return;
-                setState(() => driverImages[key] = null);
+      builder: (context) =>
+          StatefulBuilder(
+            builder: (context, setStateDialog) {
+              if (!requested &&
+                  imgUrl == null &&
+                  driver['url'] is String &&
+                  (driver['url'] as String).isNotEmpty) {
+                requested = true;
+                Future.microtask(() async {
+                  final fetched = await fetchDriverImageFromWikipedia(
+                    driver['url'] as String,
+                  );
+                  if (fetched != null) {
+                    if (!mounted) return;
+                    setStateDialog(() => imgUrl = fetched);
+                    setState(() => driverImages[key] = fetched);
+                  } else {
+                    if (!mounted) return;
+                    setState(() => driverImages[key] = null);
+                  }
+                });
               }
-            });
-          }
 
-          return AlertDialog(
-            backgroundColor: ThemeColors.card,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(
-              name,
-              style: const TextStyle(color: ThemeColors.textPrimary),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (imgUrl != null && imgUrl!.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      imgUrl!,
-                      height: 120,
-                      width: 120,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholderBox(),
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return _placeholderBox();
-                      },
+              return AlertDialog(
+                backgroundColor: ThemeColors.card,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Text(
+                  name,
+                  style: const TextStyle(color: ThemeColors.textPrimary),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (imgUrl != null && imgUrl!.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          imgUrl!,
+                          height: 120,
+                          width: 120,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _placeholderBox(),
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return _placeholderBox();
+                          },
+                        ),
+                      )
+                    else
+                      _placeholderBox(),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Date de naissance : ${driver['birthday'] ?? 'N/A'}",
+                      style: const TextStyle(color: ThemeColors.textSecondary),
+                    ),
+                    Text(
+                      "Nationalité : ${driver['nationality'] ?? 'N/A'}",
+                      style: const TextStyle(color: ThemeColors.textSecondary),
+                    ),
+                    Text(
+                      "Numéro : ${driver['number'] ?? 'N/A'}",
+                      style: const TextStyle(color: ThemeColors.textSecondary),
+                    ),
+                    GestureDetector(
+                      onTap: () => _openDriverUrl(driver['url'] as String?),
+                      child: Text(
+                        "Plus d'infos",
+                        style: TextStyle(
+                          color: ThemeColors.selected,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      "Fermer",
+                      style: TextStyle(color: ThemeColors.textPrimary),
                     ),
                   )
-                else
-                  _placeholderBox(),
-                const SizedBox(height: 8),
-                Text(
-                  "Date de naissance : ${driver['birthday'] ?? 'N/A'}",
-                  style: const TextStyle(color: ThemeColors.textSecondary),
-                ),
-                Text(
-                  "Nationalité : ${driver['nationality'] ?? 'N/A'}",
-                  style: const TextStyle(color: ThemeColors.textSecondary),
-                ),
-                Text(
-                  "Numéro : ${driver['number'] ?? 'N/A'}",
-                  style: const TextStyle(color: ThemeColors.textSecondary),
-                ),
-                GestureDetector(
-                  onTap: () => _openDriverUrl(driver['url'] as String?),
-                  child: Text(
-                    "Plus d'infos",
-                    style: TextStyle(
-                      color: ThemeColors.selected,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  "Fermer",
-                  style: TextStyle(color: ThemeColors.textPrimary),
-                ),
-              )
-            ],
-          );
-        },
-      ),
+                ],
+              );
+            },
+          ),
     );
   }
 
-  Widget _placeholderBox() => Container(
-    height: 120,
-    width: 120,
-    alignment: Alignment.center,
-    color: ThemeColors.background,
-    child: const Icon(
-      Icons.person,
-      size: 48,
-      color: ThemeColors.textSecondary,
-    ),
-  );
+  Widget _placeholderBox() =>
+      Container(
+        height: 120,
+        width: 120,
+        alignment: Alignment.center,
+        color: ThemeColors.background,
+        child: const Icon(
+          Icons.person,
+          size: 48,
+          color: ThemeColors.textSecondary,
+        ),
+      );
 
   Future<void> handleDriverSelection(Map<String, dynamic> driver) async {
     final surname = (driver['surname'] ?? '').toString().trim();
@@ -493,11 +500,12 @@ class _ClassementPageState extends State<ClassementPage> {
   Future<void> _openSearchPopin() async {
     final chosen = await showDialog<dynamic>(
       context: context,
-      builder: (context) => SearchPopin(
-        minYear: 1950,
-        initialYear: selectedYear,
-        onDriverSelected: handleDriverSelection,
-      ),
+      builder: (context) =>
+          SearchPopin(
+            minYear: 1950,
+            initialYear: selectedYear,
+            onDriverSelected: handleDriverSelection,
+          ),
     );
 
     if (chosen != null && chosen is int) {
@@ -535,10 +543,11 @@ class _ClassementPageState extends State<ClassementPage> {
               child: Text('$position'),
             );
           },
-          errorBuilder: (_, __, ___) => CircleAvatar(
-            radius: size / 2,
-            child: Text('$position'),
-          ),
+          errorBuilder: (_, __, ___) =>
+              CircleAvatar(
+                radius: size / 2,
+                child: Text('$position'),
+              ),
         ),
       ),
     );
@@ -548,13 +557,16 @@ class _ClassementPageState extends State<ClassementPage> {
   String _truncateTeamNameForDevice(BuildContext context, String? name) {
     final raw = (name ?? '').trim();
     if (raw.isEmpty) return '';
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery
+        .of(context)
+        .size
+        .width;
     int maxChars;
     if (width < 340) {
       maxChars = 12;
     } else if (width < 380) {
       maxChars = 12;
-    } else if (width < 500){
+    } else if (width < 500) {
       maxChars = 12;
     } else {
       maxChars = 30;
@@ -617,64 +629,24 @@ class _ClassementPageState extends State<ClassementPage> {
     );
   }
 
-  Widget _teamInitials(String initials) => Container(
-    height: 18,
-    width: 18,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: ThemeColors.desactive,
-      borderRadius: BorderRadius.circular(4),
-    ),
-    child: Text(
-      initials,
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-      ),
-    ),
-  );
-
-  // —————————————— Cœur animé générique
-  Widget _buildAnimatedHeart({
-    required bool isFavorite,
-    required VoidCallback onToggle,
-    double size = 24,
-  }) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 250),
-      builder: (context, value, child) {
-        final scale = TweenSequence<double>([
-          TweenSequenceItem(
-            tween: Tween(begin: 1.0, end: 1.2)
-                .chain(CurveTween(curve: Curves.easeOut)),
-            weight: 50,
+  Widget _teamInitials(String initials) =>
+      Container(
+        height: 18,
+        width: 18,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: ThemeColors.desactive,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
           ),
-          TweenSequenceItem(
-            tween: Tween(begin: 1.2, end: 1.0)
-                .chain(CurveTween(curve: Curves.easeIn)),
-            weight: 50,
-          ),
-        ]).transform(value);
-
-        return Transform.scale(
-          scale: scale,
-          child: IconButton(
-            iconSize: size,
-            padding: EdgeInsets.zero,
-            splashRadius: size,
-            onPressed: onToggle,
-            icon: Icon(
-              isFavorite ? Icons.favorite : Icons.favorite_border,
-              color:
-              isFavorite ? Colors.redAccent : ThemeColors.textSecondary,
-            ),
-          ),
-        );
-      },
-    );
-  }
+        ),
+      );
 
   Future<void> _updateFavoriteDriver(String? key, String? displayName) async {
     _favoriteDriverKey = key;
@@ -703,7 +675,10 @@ class _ClassementPageState extends State<ClassementPage> {
   @override
   Widget build(BuildContext context) {
     final dataList = showPilotes ? pilotes : constructors;
-    final isSmallScreen = MediaQuery.of(context).size.width < 360;
+    final isSmallScreen = MediaQuery
+        .of(context)
+        .size
+        .width < 360;
 
     return Scaffold(
       backgroundColor: ThemeColors.background,
@@ -849,8 +824,9 @@ class _ClassementPageState extends State<ClassementPage> {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            _buildAnimatedHeart(
+                            LikeHeart(
                               isFavorite: isFav,
+                              size: isSmallScreen ? 20 : 22,
                               onToggle: () async {
                                 if (isFav) {
                                   await _updateFavoriteDriver(
@@ -866,7 +842,6 @@ class _ClassementPageState extends State<ClassementPage> {
                                 if (!mounted) return;
                                 setState(() {});
                               },
-                              size: isSmallScreen ? 20 : 22,
                             ),
                           ],
                         ),
@@ -931,8 +906,9 @@ class _ClassementPageState extends State<ClassementPage> {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            _buildAnimatedHeart(
+                            LikeHeart(
                               isFavorite: isFavTeam,
+                              size: isSmallScreen ? 20 : 22,
                               onToggle: () async {
                                 if (isFavTeam) {
                                   await _updateFavoriteTeam(
@@ -948,7 +924,6 @@ class _ClassementPageState extends State<ClassementPage> {
                                 if (!mounted) return;
                                 setState(() {});
                               },
-                              size: isSmallScreen ? 20 : 22,
                             ),
                           ],
                         ),
@@ -962,8 +937,8 @@ class _ClassementPageState extends State<ClassementPage> {
         ],
       ),
     );
-  }
 
+  }
   Widget _buildTeamAvatar(String? teamName, String pos) {
     final key = _teamKey(teamName);
     final logo = teamLogos[key];
@@ -988,7 +963,6 @@ class _ClassementPageState extends State<ClassementPage> {
       ),
     );
   }
-
 }
 // —————————————————— SearchPopin (inchangée sauf import)
 class SearchPopin extends StatefulWidget {
