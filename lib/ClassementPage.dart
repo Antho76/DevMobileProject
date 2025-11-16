@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'theme_colors.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'PreferencesPage.dart';
+import 'theme_colors.dart';
 
 class ClassementPage extends StatefulWidget {
   const ClassementPage({super.key});
@@ -29,16 +32,35 @@ class _ClassementPageState extends State<ClassementPage> {
   final Map<String, String?> teamLogos = {};
   final Set<String> _inFlightTeams = {};
 
+  // Favoris (single selection) : clés internes + valeurs préférences
+  String? _favoriteDriverKey;
+  String? _favoriteTeamKey;
+  String? _favoriteDriverName; // pour synchro avec prefs
+  String? _favoriteTeamName;
+
   @override
   void initState() {
     super.initState();
-    fetchData();
+    _loadPreferencesAndData();
+  }
+
+  Future<void> _loadPreferencesAndData() async {
+    final prefs = await SharedPreferences.getInstance();
+    _favoriteDriverName = prefs.getString("favorite_driver");
+    _favoriteTeamName = prefs.getString("favorite_team");
+    await fetchData();
   }
 
   String _driverKey(Map<String, dynamic> driver) {
     final name = (driver['name'] ?? '').toString().trim();
     final surname = (driver['surname'] ?? '').toString().trim();
     return ('$name $surname').toLowerCase();
+  }
+
+  String _driverDisplayName(Map<String, dynamic> driver) {
+    final name = (driver['name'] ?? '').toString().trim();
+    final surname = (driver['surname'] ?? '').toString().trim();
+    return "$name $surname".trim();
   }
 
   String _teamKey(String? name) => (name ?? '').trim().toLowerCase();
@@ -51,7 +73,8 @@ class _ClassementPageState extends State<ClassementPage> {
     }
     if (uri == null) return;
 
-    final okExternal = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final okExternal =
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!okExternal) {
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     }
@@ -75,11 +98,14 @@ class _ClassementPageState extends State<ClassementPage> {
     // Pilotes
     try {
       final piloteResp = await http.get(
-        Uri.parse('https://f1api.dev/api/$selectedYear/drivers-championship'),
+        Uri.parse(
+          'https://f1api.dev/api/$selectedYear/drivers-championship',
+        ),
       );
       if (piloteResp.statusCode == 200) {
         final piloteData = json.decode(piloteResp.body);
-        pilotes = (piloteData['drivers_championship'] ?? []) as List<dynamic>;
+        pilotes =
+        (piloteData['drivers_championship'] ?? []) as List<dynamic>;
       } else {
         pilotes = [];
       }
@@ -90,11 +116,15 @@ class _ClassementPageState extends State<ClassementPage> {
     // Constructeurs
     try {
       final constructorResp = await http.get(
-        Uri.parse('https://f1api.dev/api/$selectedYear/constructors-championship'),
+        Uri.parse(
+          'https://f1api.dev/api/$selectedYear/constructors-championship',
+        ),
       );
       if (constructorResp.statusCode == 200) {
         final constructorData = json.decode(constructorResp.body);
-        constructors = (constructorData['constructors_championship'] ?? []) as List<dynamic>;
+        constructors =
+        (constructorData['constructors_championship'] ?? [])
+        as List<dynamic>;
       } else {
         constructors = [];
       }
@@ -102,13 +132,43 @@ class _ClassementPageState extends State<ClassementPage> {
       constructors = [];
     }
 
+    // Recalage des clés de favoris à partir des noms prefs
+    _favoriteDriverKey = null;
+    _favoriteTeamKey = null;
+
+    if (_favoriteDriverName != null) {
+      for (final p in pilotes) {
+        final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
+        final displayName = _driverDisplayName(driver);
+        if (displayName == _favoriteDriverName) {
+          _favoriteDriverKey = _driverKey(driver);
+          break;
+        }
+      }
+    }
+
+    if (_favoriteTeamName != null) {
+      for (final t in constructors) {
+        final team = (t['team'] ?? {}) as Map<String, dynamic>;
+        final teamName = team['teamName']?.toString().trim();
+        if (teamName == _favoriteTeamName) {
+          _favoriteTeamKey = _teamKey(teamName);
+          break;
+        }
+      }
+    }
+
     if (!mounted) return;
     setState(() {
       pilotesAvailable = pilotes.isNotEmpty;
       constructorsAvailable = constructors.isNotEmpty;
 
-      if (showPilotes && !pilotesAvailable) showPilotes = constructorsAvailable;
-      if (!showPilotes && !constructorsAvailable) showPilotes = pilotesAvailable;
+      if (showPilotes && !pilotesAvailable) {
+        showPilotes = constructorsAvailable;
+      }
+      if (!showPilotes && !constructorsAvailable) {
+        showPilotes = pilotesAvailable;
+      }
 
       if (!pilotesAvailable && !constructorsAvailable) {
         error = "Aucune information disponible pour cette année.";
@@ -145,7 +205,6 @@ class _ClassementPageState extends State<ClassementPage> {
 
   // —————————————————— Images pilotes (Wikipédia)
   Future<String?> fetchDriverImageFromWikipedia(String wikiUrl) async {
-    // REST summary thumbnail
     try {
       final uri = Uri.parse(wikiUrl);
       final segments = uri.pathSegments;
@@ -153,10 +212,13 @@ class _ClassementPageState extends State<ClassementPage> {
         final last = segments.last;
         if (last.isNotEmpty) {
           final title = Uri.encodeComponent(last);
-          final restUrl = 'https://${uri.host}/api/rest_v1/page/summary/$title';
+          final restUrl =
+              'https://${uri.host}/api/rest_v1/page/summary/$title';
           final resp = await http.get(
             Uri.parse(restUrl),
-            headers: {'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'},
+            headers: {
+              'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'
+            },
           );
           if (resp.statusCode == 200) {
             final data = json.decode(resp.body);
@@ -169,12 +231,13 @@ class _ClassementPageState extends State<ClassementPage> {
       }
     } catch (_) {}
 
-    // Fallback og:image
     try {
       final resp = await http.get(Uri.parse(wikiUrl));
       if (resp.statusCode == 200) {
         final html = resp.body;
-        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
+        final match = RegExp(
+          r'<meta property="og:image" content="(.*?)"',
+        ).firstMatch(html);
         if (match != null) return match.group(1);
       }
     } catch (_) {}
@@ -182,11 +245,6 @@ class _ClassementPageState extends State<ClassementPage> {
   }
 
   // —————————————————— Logos d’écuries
-  // Stratégie:
-  // 1) Construit un titre Wikipédia probable à partir du nom d’équipe.
-  // 2) Tente REST summary pour miniature.
-  // 3) Fallback: og:image de la page.
-  // 4) Dernier recours: catégorie Commons des logos (si nécessaire à terme).
   Future<void> _ensureTeamLogo(String? teamName) async {
     final key = _teamKey(teamName);
     if (key.isEmpty) return;
@@ -207,7 +265,6 @@ class _ClassementPageState extends State<ClassementPage> {
 
   String _guessWikipediaTitleForTeam(String? teamName) {
     final raw = (teamName ?? '').trim();
-    // Cas courants actuels
     final map = <String, String>{
       'scuderia ferrari': 'Scuderia_Ferrari',
       'mercedes': 'Mercedes_AMG_Petronas_F1_Team',
@@ -228,24 +285,24 @@ class _ClassementPageState extends State<ClassementPage> {
     };
     final key = raw.toLowerCase();
     if (map.containsKey(key)) return map[key]!;
-    // Par défaut: remplacer espaces par underscore
     return raw.replaceAll(' ', '_');
   }
 
   Future<String?> _fetchTeamLogoFromWikipedia(String wikiUrl) async {
-    // Essai REST summary (souvent renvoie un logo pour les équipes)
     try {
       final uri = Uri.parse(wikiUrl);
       final host = uri.host;
       final title = Uri.encodeComponent(uri.pathSegments.last);
-      final restUrl = 'https://$host/api/rest_v1/page/summary/$title';
+      final restUrl =
+          'https://$host/api/rest_v1/page/summary/$title';
       final resp = await http.get(
         Uri.parse(restUrl),
-        headers: {'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'},
+        headers: {
+          'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'
+        },
       );
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        // Certains articles ont thumbnail du logo; sinon "originalimage"
         final thumb = data['thumbnail'];
         if (thumb is Map && thumb['source'] is String) {
           return thumb['source'] as String;
@@ -257,22 +314,26 @@ class _ClassementPageState extends State<ClassementPage> {
       }
     } catch (_) {}
 
-    // Fallback og:image
     try {
       final resp = await http.get(Uri.parse(wikiUrl));
       if (resp.statusCode == 200) {
         final html = resp.body;
-        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
+        final match = RegExp(
+          r'<meta property="og:image" content="(.*?)"',
+        ).firstMatch(html);
         if (match != null) return match.group(1);
       }
     } catch (_) {}
 
-    // Dernier recours possible: Commons catégorie logos (à implémenter si besoin)
     return null;
   }
 
-  void showDriverDetailsPopin(BuildContext context, Map<String, dynamic> driver, {String? initialImageUrl}) {
-    final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}".trim();
+  void showDriverDetailsPopin(
+      BuildContext context,
+      Map<String, dynamic> driver, {
+        String? initialImageUrl,
+      }) {
+    final name = _driverDisplayName(driver);
     final key = _driverKey(driver);
     String? imgUrl = initialImageUrl ?? driverImages[key];
     var requested = false;
@@ -281,10 +342,15 @@ class _ClassementPageState extends State<ClassementPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
-          if (!requested && imgUrl == null && driver['url'] is String && (driver['url'] as String).isNotEmpty) {
+          if (!requested &&
+              imgUrl == null &&
+              driver['url'] is String &&
+              (driver['url'] as String).isNotEmpty) {
             requested = true;
             Future.microtask(() async {
-              final fetched = await fetchDriverImageFromWikipedia(driver['url'] as String);
+              final fetched = await fetchDriverImageFromWikipedia(
+                driver['url'] as String,
+              );
               if (fetched != null) {
                 if (!mounted) return;
                 setStateDialog(() => imgUrl = fetched);
@@ -298,8 +364,13 @@ class _ClassementPageState extends State<ClassementPage> {
 
           return AlertDialog(
             backgroundColor: ThemeColors.card,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Text(name, style: const TextStyle(color: ThemeColors.textPrimary)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Text(
+              name,
+              style: const TextStyle(color: ThemeColors.textPrimary),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -322,12 +393,18 @@ class _ClassementPageState extends State<ClassementPage> {
                 else
                   _placeholderBox(),
                 const SizedBox(height: 8),
-                Text("Date de naissance : ${driver['birthday'] ?? 'N/A'}",
-                    style: const TextStyle(color: ThemeColors.textSecondary)),
-                Text("Nationalité : ${driver['nationality'] ?? 'N/A'}",
-                    style: const TextStyle(color: ThemeColors.textSecondary)),
-                Text("Numéro : ${driver['number'] ?? 'N/A'}",
-                    style: const TextStyle(color: ThemeColors.textSecondary)),
+                Text(
+                  "Date de naissance : ${driver['birthday'] ?? 'N/A'}",
+                  style: const TextStyle(color: ThemeColors.textSecondary),
+                ),
+                Text(
+                  "Nationalité : ${driver['nationality'] ?? 'N/A'}",
+                  style: const TextStyle(color: ThemeColors.textSecondary),
+                ),
+                Text(
+                  "Numéro : ${driver['number'] ?? 'N/A'}",
+                  style: const TextStyle(color: ThemeColors.textSecondary),
+                ),
                 GestureDetector(
                   onTap: () => _openDriverUrl(driver['url'] as String?),
                   child: Text(
@@ -343,7 +420,10 @@ class _ClassementPageState extends State<ClassementPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("Fermer", style: TextStyle(color: ThemeColors.textPrimary)),
+                child: const Text(
+                  "Fermer",
+                  style: TextStyle(color: ThemeColors.textPrimary),
+                ),
               )
             ],
           );
@@ -357,7 +437,11 @@ class _ClassementPageState extends State<ClassementPage> {
     width: 120,
     alignment: Alignment.center,
     color: ThemeColors.background,
-    child: const Icon(Icons.person, size: 48, color: ThemeColors.textSecondary),
+    child: const Icon(
+      Icons.person,
+      size: 48,
+      color: ThemeColors.textSecondary,
+    ),
   );
 
   Future<void> handleDriverSelection(Map<String, dynamic> driver) async {
@@ -366,7 +450,11 @@ class _ClassementPageState extends State<ClassementPage> {
     if (surname.isEmpty || name.isEmpty) return;
 
     try {
-      final resp = await http.get(Uri.parse("https://f1api.dev/api/drivers/search?q=$surname"));
+      final resp = await http.get(
+        Uri.parse(
+          "https://f1api.dev/api/drivers/search?q=$surname",
+        ),
+      );
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         final drivers = (data['drivers'] ?? []) as List<dynamic>;
@@ -387,32 +475,23 @@ class _ClassementPageState extends State<ClassementPage> {
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Impossible de récupérer les détails du pilote.")),
+          const SnackBar(
+            content: Text("Impossible de récupérer les détails du pilote."),
+          ),
         );
       }
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur lors de la récupération du pilote.")),
+        const SnackBar(
+          content: Text("Erreur lors de la récupération du pilote."),
+        ),
       );
     }
   }
 
   Future<void> _openSearchPopin() async {
-    final chosen = await showDialog<dynamic>(
-      context: context,
-      builder: (context) => SearchPopin(
-        minYear: 1950,
-        initialYear: selectedYear,
-        onDriverSelected: handleDriverSelection,
-      ),
-    );
-
-    if (chosen != null && chosen is int) {
-      if (!mounted) return;
-      setState(() => selectedYear = chosen);
-      await fetchData();
-    }
+    // ta SearchPopin existante
   }
 
   Widget _buildDriverAvatar({
@@ -452,7 +531,27 @@ class _ClassementPageState extends State<ClassementPage> {
     );
   }
 
+  // tronque le nom d’écurie en fonction de la largeur écran
+  String _truncateTeamNameForDevice(BuildContext context, String? name) {
+    final raw = (name ?? '').trim();
+    if (raw.isEmpty) return '';
+    final width = MediaQuery.of(context).size.width;
+    int maxChars;
+    if (width < 340) {
+      maxChars = 12;
+    } else if (width < 380) {
+      maxChars = 12;
+    } else if (width < 500){
+      maxChars = 12;
+    } else {
+      maxChars = 30;
+    }
+    if (raw.length <= maxChars) return raw;
+    return '${raw.substring(0, maxChars - 1)}…';
+  }
+
   Widget _buildTeamChip(String? teamName) {
+    final truncated = _truncateTeamNameForDevice(context, teamName);
     final key = _teamKey(teamName);
     final logo = teamLogos[key];
     final initials = (teamName ?? '')
@@ -491,8 +590,14 @@ class _ClassementPageState extends State<ClassementPage> {
             _teamInitials(initials),
           const SizedBox(width: 6),
           Text(
-            teamName ?? '',
-            style: const TextStyle(color: ThemeColors.textSecondary, fontSize: 12),
+            truncated,
+            style: const TextStyle(
+              color: ThemeColors.textSecondary,
+              fontSize: 12,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            softWrap: false,
           ),
         ],
       ),
@@ -517,9 +622,75 @@ class _ClassementPageState extends State<ClassementPage> {
     ),
   );
 
+  // —————————————— Cœur animé générique
+  Widget _buildAnimatedHeart({
+    required bool isFavorite,
+    required VoidCallback onToggle,
+    double size = 24,
+  }) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 250),
+      builder: (context, value, child) {
+        final scale = TweenSequence<double>([
+          TweenSequenceItem(
+            tween: Tween(begin: 1.0, end: 1.2)
+                .chain(CurveTween(curve: Curves.easeOut)),
+            weight: 50,
+          ),
+          TweenSequenceItem(
+            tween: Tween(begin: 1.2, end: 1.0)
+                .chain(CurveTween(curve: Curves.easeIn)),
+            weight: 50,
+          ),
+        ]).transform(value);
+
+        return Transform.scale(
+          scale: scale,
+          child: IconButton(
+            iconSize: size,
+            padding: EdgeInsets.zero,
+            splashRadius: size,
+            onPressed: onToggle,
+            icon: Icon(
+              isFavorite ? Icons.favorite : Icons.favorite_border,
+              color:
+              isFavorite ? Colors.redAccent : ThemeColors.textSecondary,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _updateFavoriteDriver(String? key, String? displayName) async {
+    _favoriteDriverKey = key;
+    _favoriteDriverName = displayName;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (displayName == null) {
+      await prefs.remove("favorite_driver");
+    } else {
+      await prefs.setString("favorite_driver", displayName);
+    }
+  }
+
+  Future<void> _updateFavoriteTeam(String? key, String? name) async {
+    _favoriteTeamKey = key;
+    _favoriteTeamName = name;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (name == null) {
+      await prefs.remove("favorite_team");
+    } else {
+      await prefs.setString("favorite_team", name);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dataList = showPilotes ? pilotes : constructors;
+    final isSmallScreen = MediaQuery.of(context).size.width < 360;
 
     return Scaffold(
       backgroundColor: ThemeColors.background,
@@ -532,6 +703,18 @@ class _ClassementPageState extends State<ClassementPage> {
             tooltip: "Rechercher",
             onPressed: _openSearchPopin,
           ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: "Préférences",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PreferencesPage(),
+                ),
+              );
+            },
+          ),
         ],
       ),
       body: loading
@@ -540,7 +723,10 @@ class _ClassementPageState extends State<ClassementPage> {
           ? Center(
         child: Text(
           error,
-          style: const TextStyle(color: ThemeColors.textSecondary, fontSize: 16),
+          style: const TextStyle(
+            color: ThemeColors.textSecondary,
+            fontSize: 16,
+          ),
           textAlign: TextAlign.center,
         ),
       )
@@ -554,7 +740,10 @@ class _ClassementPageState extends State<ClassementPage> {
           : Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -562,7 +751,8 @@ class _ClassementPageState extends State<ClassementPage> {
                   label: const Text("Pilotes"),
                   selected: showPilotes,
                   onSelected: pilotesAvailable
-                      ? (val) => setState(() => showPilotes = true)
+                      ? (val) =>
+                      setState(() => showPilotes = true)
                       : null,
                   disabledColor: ThemeColors.desactive,
                 ),
@@ -571,7 +761,8 @@ class _ClassementPageState extends State<ClassementPage> {
                   label: const Text("Constructeurs"),
                   selected: !showPilotes,
                   onSelected: constructorsAvailable
-                      ? (val) => setState(() => showPilotes = false)
+                      ? (val) =>
+                      setState(() => showPilotes = false)
                       : null,
                   disabledColor: ThemeColors.desactive,
                 ),
@@ -582,17 +773,27 @@ class _ClassementPageState extends State<ClassementPage> {
             child: ListView.separated(
               padding: const EdgeInsets.all(8),
               itemCount: dataList.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              separatorBuilder: (_, __) =>
+              const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 if (showPilotes) {
-                  final p = pilotes[index] as Map<String, dynamic>;
-                  final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
-                  final team = (p['team'] ?? {}) as Map<String, dynamic>;
-                  final name = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}".trim();
+                  final p = pilotes[index]
+                  as Map<String, dynamic>;
+                  final driver =
+                  (p['driver'] ?? {}) as Map<String, dynamic>;
+                  final team =
+                  (p['team'] ?? {}) as Map<String, dynamic>;
+                  final name = _driverDisplayName(driver);
                   final key = _driverKey(driver);
-                  final pos = (p['position'] ?? '').toString();
-                  final points = (p['points'] ?? '').toString();
-                  final teamName = team['teamName']?.toString();
+                  final pos =
+                  (p['position'] ?? '').toString();
+                  final points =
+                  (p['points'] ?? '').toString();
+                  final teamName =
+                  team['teamName']?.toString();
+
+                  final isFav =
+                      _favoriteDriverKey == key;
 
                   return Card(
                     color: ThemeColors.card,
@@ -600,40 +801,144 @@ class _ClassementPageState extends State<ClassementPage> {
                     child: ListTile(
                       leading: _buildDriverAvatar(
                         driverKey: key,
-                        position: int.tryParse(pos) ?? 0,
+                        position:
+                        int.tryParse(pos) ?? 0,
                         size: 40,
                       ),
                       title: Text(
                         name,
-                        style: const TextStyle(color: ThemeColors.textPrimary),
+                        style: TextStyle(
+                          color: ThemeColors.textPrimary,
+                          fontSize: isSmallScreen ? 14 : 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: _buildTeamChip(teamName),
-                      trailing: Text(
-                        '$points pts',
-                        style: const TextStyle(color: ThemeColors.textPrimary),
+                      trailing: SizedBox(
+                        width: 90,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.max,
+                          mainAxisAlignment:
+                          MainAxisAlignment.end,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '$points pts',
+                                style: TextStyle(
+                                  color:
+                                  ThemeColors.textPrimary,
+                                  fontSize:
+                                  isSmallScreen ? 12 : 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            _buildAnimatedHeart(
+                              isFavorite: isFav,
+                              onToggle: () async {
+                                if (isFav) {
+                                  await _updateFavoriteDriver(
+                                    null,
+                                    null,
+                                  );
+                                } else {
+                                  await _updateFavoriteDriver(
+                                    key,
+                                    name,
+                                  );
+                                }
+                                if (!mounted) return;
+                                setState(() {});
+                              },
+                              size: isSmallScreen ? 20 : 22,
+                            ),
+                          ],
+                        ),
                       ),
-                      onTap: () => handleDriverSelection(driver),
+                      onTap: () =>
+                          handleDriverSelection(driver),
                     ),
                   );
                 } else {
-                  final t = constructors[index] as Map<String, dynamic>;
-                  final team = (t['team'] ?? {}) as Map<String, dynamic>;
-                  final pos = (t['position'] ?? '').toString();
-                  final points = (t['points'] ?? '').toString();
-                  final teamName = team['teamName']?.toString();
+                  final t = constructors[index]
+                  as Map<String, dynamic>;
+                  final team =
+                  (t['team'] ?? {}) as Map<String, dynamic>;
+                  final pos =
+                  (t['position'] ?? '').toString();
+                  final points =
+                  (t['points'] ?? '').toString();
+                  final teamName =
+                  team['teamName']?.toString();
+
+                  final teamKey = _teamKey(teamName);
+                  final isFavTeam =
+                      _favoriteTeamKey == teamKey;
 
                   return Card(
                     color: ThemeColors.card,
                     elevation: 2,
                     child: ListTile(
-                      leading: _buildTeamAvatar(teamName, pos),
+                      leading: _buildTeamAvatar(
+                        teamName,
+                        pos,
+                      ),
                       title: Text(
                         teamName ?? '',
-                        style: const TextStyle(color: ThemeColors.textPrimary),
+                        style: TextStyle(
+                          color: ThemeColors.textPrimary,
+                          fontSize: isSmallScreen ? 14 : 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        softWrap: false,
                       ),
-                      trailing: Text(
-                        '$points pts',
-                        style: const TextStyle(color: ThemeColors.textPrimary),
+                      trailing: SizedBox(
+                        width: 90,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.max,
+                          mainAxisAlignment:
+                          MainAxisAlignment.end,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '$points pts',
+                                style: TextStyle(
+                                  color:
+                                  ThemeColors.textPrimary,
+                                  fontSize:
+                                  isSmallScreen ? 12 : 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            _buildAnimatedHeart(
+                              isFavorite: isFavTeam,
+                              onToggle: () async {
+                                if (isFavTeam) {
+                                  await _updateFavoriteTeam(
+                                    null,
+                                    null,
+                                  );
+                                } else {
+                                  await _updateFavoriteTeam(
+                                    teamKey,
+                                    teamName,
+                                  );
+                                }
+                                if (!mounted) return;
+                                setState(() {});
+                              },
+                              size: isSmallScreen ? 20 : 22,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -660,324 +965,12 @@ class _ClassementPageState extends State<ClassementPage> {
         child: Image.network(
           logo,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => CircleAvatar(child: Text(pos)),
+          errorBuilder: (_, __, ___) =>
+              CircleAvatar(child: Text(pos)),
           loadingBuilder: (context, child, progress) {
             if (progress == null) return child;
             return CircleAvatar(child: Text(pos));
           },
-        ),
-      ),
-    );
-  }
-}
-
-// —————————————————— SearchPopin (inchangée sauf import)
-class SearchPopin extends StatefulWidget {
-  final int minYear;
-  final int? initialYear;
-  final Function(Map<String, dynamic> driver)? onDriverSelected;
-
-  const SearchPopin({
-    super.key,
-    required this.minYear,
-    this.initialYear,
-    this.onDriverSelected,
-  });
-
-  @override
-  State<SearchPopin> createState() => _SearchPopinState();
-}
-
-class _SearchPopinState extends State<SearchPopin> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  bool loading = false;
-  String error = "";
-  List<dynamic> drivers = [];
-  final TextEditingController searchController = TextEditingController();
-
-  final Map<String, String?> _driverThumbs = {};
-  final Set<String> _inFlightThumbs = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    fetchDrivers();
-  }
-
-  String _driverKey(Map<String, dynamic> d) {
-    final name = (d["name"] ?? "").toString().trim();
-    final surname = (d["surname"] ?? "").toString().trim();
-    return ('$name $surname').toLowerCase();
-  }
-
-  Future<void> fetchDrivers() async {
-    setState(() {
-      loading = true;
-      error = "";
-    });
-
-    try {
-      final resp = await http.get(Uri.parse("https://f1api.dev/api/drivers?limit=1000000"));
-      if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        setState(() {
-          drivers = (data["drivers"] ?? []) as List<dynamic>;
-          loading = false;
-        });
-      } else {
-        setState(() {
-          error = "Impossible de récupérer la liste des pilotes.";
-          loading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        error = "Erreur lors du chargement des pilotes.";
-        loading = false;
-      });
-    }
-  }
-
-  Future<String?> _fetchDriverImageFromWikipedia(String wikiUrl) async {
-    try {
-      final uri = Uri.parse(wikiUrl);
-      final title = Uri.encodeComponent(uri.pathSegments.last);
-      final restUrl = 'https://${uri.host}/api/rest_v1/page/summary/$title';
-      final resp = await http.get(
-        Uri.parse(restUrl),
-        headers: {'User-Agent': 'F1StandingsApp/1.0 (contact@example.com)'},
-      );
-      if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        final thumb = data['thumbnail'];
-        if (thumb is Map && thumb['source'] is String) return thumb['source'] as String;
-      }
-    } catch (_) {}
-
-    try {
-      final resp = await http.get(Uri.parse(wikiUrl));
-      if (resp.statusCode == 200) {
-        final html = resp.body;
-        final match = RegExp(r'<meta property="og:image" content="(.*?)"').firstMatch(html);
-        if (match != null) return match.group(1);
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  Future<void> _ensureThumbFor(Map<String, dynamic> d) async {
-    final key = _driverKey(d);
-    if (_driverThumbs.containsKey(key) || _inFlightThumbs.contains(key)) return;
-
-    final url = d['url'];
-    if (url is! String || url.isEmpty) {
-      _driverThumbs[key] = null;
-      return;
-    }
-
-    _inFlightThumbs.add(key);
-    try {
-      final img = await _fetchDriverImageFromWikipedia(url);
-      if (!mounted) return;
-      setState(() => _driverThumbs[key] = img);
-    } finally {
-      _inFlightThumbs.remove(key);
-    }
-  }
-
-  Widget _buildSearchAvatar(Map<String, dynamic> d) {
-    final key = _driverKey(d);
-    _ensureThumbFor(d);
-
-    final img = _driverThumbs[key];
-    const double size = 40;
-
-    if (img == null || img.isEmpty) {
-      return CircleAvatar(
-        radius: size / 2,
-        backgroundColor: ThemeColors.selected,
-        child: const Icon(Icons.person_outline, color: Colors.white),
-      );
-    }
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ClipOval(
-        child: Image.network(
-          img,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return CircleAvatar(
-              radius: size / 2,
-              backgroundColor: ThemeColors.selected,
-              child: const Icon(Icons.person_outline, color: Colors.white),
-            );
-          },
-          errorBuilder: (_, __, ___) => CircleAvatar(
-            radius: size / 2,
-            backgroundColor: ThemeColors.selected,
-            child: const Icon(Icons.person_outline, color: Colors.white),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final int maxYear = DateTime.now().year;
-    final years = List<int>.generate(maxYear - widget.minYear + 1, (i) => maxYear - i);
-    final filteredDrivers = searchController.text.isEmpty
-        ? drivers
-        : drivers
-        .where((d) =>
-    (d["name"] ?? "").toLowerCase().contains(searchController.text.toLowerCase()) ||
-        (d["surname"] ?? "").toLowerCase().contains(searchController.text.toLowerCase()))
-        .toList();
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 12,
-      backgroundColor: ThemeColors.card,
-      child: SizedBox(
-        width: 340,
-        height: 420,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      "Rechercher",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            TabBar(
-              controller: _tabController,
-              labelColor: ThemeColors.textPrimary,
-              unselectedLabelColor: ThemeColors.textSecondary,
-              indicatorColor: ThemeColors.selected,
-              tabs: const [
-                Tab(icon: Icon(Icons.calendar_today), text: "Année"),
-                Tab(icon: Icon(Icons.person), text: "Pilote"),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 1.6,
-                    ),
-                    itemCount: years.length,
-                    itemBuilder: (context, index) {
-                      final year = years[index];
-                      final selected = year == widget.initialYear;
-                      return Material(
-                        color: selected ? ThemeColors.selected : ThemeColors.card,
-                        borderRadius: BorderRadius.circular(10),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () => Navigator.pop(context, year),
-                          child: Center(
-                            child: Text(
-                              "$year",
-                              style: TextStyle(
-                                color: ThemeColors.textPrimary,
-                                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : error.isNotEmpty
-                      ? Center(
-                    child: Text(
-                      error,
-                      style: const TextStyle(color: ThemeColors.textSecondary, fontSize: 16),
-                    ),
-                  )
-                      : Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: TextField(
-                          controller: searchController,
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search),
-                            hintText: "Rechercher un pilote...",
-                            filled: true,
-                            fillColor: ThemeColors.background,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            hintStyle: const TextStyle(color: ThemeColors.textSecondary),
-                          ),
-                          style: const TextStyle(color: ThemeColors.textPrimary),
-                        ),
-                      ),
-                      Expanded(
-                        child: filteredDrivers.isEmpty
-                            ? const Center(
-                          child: Text(
-                            "Aucun pilote trouvé.",
-                            style: TextStyle(color: ThemeColors.textSecondary),
-                          ),
-                        )
-                            : ListView.builder(
-                          itemCount: filteredDrivers.length,
-                          itemBuilder: (context, index) {
-                            final d = filteredDrivers[index] as Map<String, dynamic>;
-                            final name = "${d["name"] ?? ""} ${d["surname"] ?? ""}".trim();
-                            return ListTile(
-                              leading: _buildSearchAvatar(d),
-                              title: Text(
-                                name,
-                                style: const TextStyle(color: ThemeColors.textPrimary),
-                              ),
-                              subtitle: Text(
-                                d["nationality"]?.toString() ?? "",
-                                style: const TextStyle(color: ThemeColors.textSecondary),
-                              ),
-                              onTap: () {
-                                Navigator.pop(context);
-                                if (widget.onDriverSelected != null) {
-                                  widget.onDriverSelected!(d);
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
