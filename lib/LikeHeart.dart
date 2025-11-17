@@ -24,7 +24,6 @@ class _LikeHeartState extends State<LikeHeart>
   late Animation<double> _scaleAnimation;
   late Animation<double> _starsOpacity;
 
-  // utilisé pour ne jouer les étoiles QUE lors du passage false -> true
   bool _lastFavorite = false;
 
   @override
@@ -70,13 +69,10 @@ class _LikeHeartState extends State<LikeHeart>
   void didUpdateWidget(covariant LikeHeart oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // transition de like
     if (!_lastFavorite && widget.isFavorite) {
-      // false -> true : on joue l'animation complète (cœur + étoiles)
       _controller.forward(from: 0.0);
       _lastFavorite = true;
     } else if (_lastFavorite && !widget.isFavorite) {
-      // true -> false : on enlève juste la couleur / échelle, sans étoiles
       _controller.reverse();
       _lastFavorite = false;
     }
@@ -103,7 +99,6 @@ class _LikeHeartState extends State<LikeHeart>
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            // étoiles uniquement pendant l'anim de like
             if (showStars)
               Opacity(
                 opacity: _starsOpacity.value,

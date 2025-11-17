@@ -27,11 +27,11 @@ class Footer extends StatelessWidget {
           label: 'Accueil',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.emoji_events), // podium
+          icon: Icon(Icons.emoji_events),
           label: 'Classement',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.flag), // drapeau de course
+          icon: Icon(Icons.flag),
           label: 'Course',
         ),
         BottomNavigationBarItem(

@@ -130,7 +130,6 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 🟣 Losange violet
                       Transform.rotate(
                         angle: math.pi / 4,
                         child: Container(
@@ -168,9 +167,8 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
                         child: ClipPath(
                           clipper: LeftCutClipper(),
                           child: Container(
-                            // ✅ AUGMENTATION DU PADDING GAUCHE pour éviter le crop
                             padding: EdgeInsets.only(
-                              left: isMobile ? 50 : 60, // ✅ Augmenté de 36/44 à 50/60
+                              left: isMobile ? 50 : 60,
                               right: 12,
                               top: 8,
                               bottom: 8,
@@ -190,14 +188,11 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Bandeau date avec même padding que le container principal
                                 Transform.translate(
-                                  // ✅ Décaler le bandeau vers la gauche pour qu'il démarre au bord
                                   offset: Offset(-(isMobile ? 50.0: 60.0), 0.0),
                                   child: ClipPath(
                                     clipper: LeftCutClipper(),
                                     child: Container(
-                                      // ✅ Même padding que le container principal
                                       padding: EdgeInsets.only(
                                         left: isMobile ? 50.0 : 60.0,
                                         right: 12.0,
@@ -227,7 +222,6 @@ class _GrandPrixListPageState extends State<GrandPrixListPage> {
 
                                 const SizedBox(height: 8),
 
-                                // Contenu principal (déjà bien positionné grâce au padding du Container)
                                 Row(
                                   children: [
                                     Expanded(

@@ -166,7 +166,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // ✅ Titre ajouté
             const Text(
               "Bienvenue dans ton app F1 🏎️",
               style: TextStyle(
@@ -178,7 +177,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
             ),
             const SizedBox(height: 20),
 
-            // ✅ Message d'explication ajouté
             Text(
               "Avant toute chose, choisis ton pilote et ton écurie favorite. "
                   "Pas de panique, tu pourras toujours modifier plus tard.",

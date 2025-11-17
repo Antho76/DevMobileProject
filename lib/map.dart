@@ -39,7 +39,6 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> loadRaces() async {
     try {
-      // 1️⃣ Récupérer le calendrier F1
       final response = await http.get(Uri.parse('https://f1api.dev/api/current'));
       if (response.statusCode != 200) {
         print('Erreur API F1: ${response.statusCode}');
@@ -59,7 +58,6 @@ class _MapScreenState extends State<MapScreen> {
         final country = circuitData['country'] ?? '';
         final date = race['schedule']['race']['date'];
 
-        // 2️⃣ Géocodage via Nominatim
         final coords = await getCoordinates(circuit, city, country);
         if (coords != null) {
           tempRaces.add({

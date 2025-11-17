@@ -29,14 +29,11 @@ class _ClassementPageState extends State<ClassementPage> {
   bool pilotesAvailable = true;
   bool constructorsAvailable = true;
 
-  // Pilote -> URL photo
   final Map<String, String?> driverImages = {};
 
-  // Team -> URL logo
   final Map<String, String?> teamLogos = {};
   final Set<String> _inFlightTeams = {};
 
-  // Favoris (single selection) : clés internes + valeurs préférences
   String? _favoriteDriverKey;
   String? _favoriteTeamKey;
   String? _favoriteDriverName; // pour synchro avec prefs
@@ -141,7 +138,6 @@ class _ClassementPageState extends State<ClassementPage> {
       constructors = [];
     }
 
-    // Recalage des clés de favoris à partir des noms prefs
     _favoriteDriverKey = null;
     _favoriteTeamKey = null;
 
@@ -186,7 +182,6 @@ class _ClassementPageState extends State<ClassementPage> {
       loading = false;
     });
 
-    // Charger images pilotes + logos équipes en arrière-plan
     for (final p in pilotes) {
       final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
       final key = _driverKey(driver);
@@ -212,7 +207,6 @@ class _ClassementPageState extends State<ClassementPage> {
     }
   }
 
-  // —————————————————— Images pilotes (Wikipédia)
   Future<String?> fetchDriverImageFromWikipedia(String wikiUrl) async {
     try {
       final uri = Uri.parse(wikiUrl);
@@ -253,7 +247,6 @@ class _ClassementPageState extends State<ClassementPage> {
     return null;
   }
 
-  // —————————————————— Logos d’écuries
   Future<void> _ensureTeamLogo(String? teamName) async {
     final key = _teamKey(teamName);
     if (key.isEmpty) return;
@@ -556,7 +549,6 @@ class _ClassementPageState extends State<ClassementPage> {
     );
   }
 
-  // tronque le nom d’écurie en fonction de la largeur écran
   String _truncateTeamNameForDevice(BuildContext context, String? name) {
     final raw = (name ?? '').trim();
     if (raw.isEmpty) return '';
@@ -663,7 +655,6 @@ class _ClassementPageState extends State<ClassementPage> {
     } else {
       await prefs.setString("favorite_driver_name", displayName);
 
-      // Chercher le pilote dans la liste pour récupérer surname et image
       for (final p in pilotes) {
         final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
         if (_driverDisplayName(driver) == displayName) {
@@ -984,7 +975,7 @@ class _ClassementPageState extends State<ClassementPage> {
     );
   }
 }
-// —————————————————— SearchPopin (inchangée sauf import)
+
 class SearchPopin extends StatefulWidget {
   final int minYear;
   final int? initialYear;

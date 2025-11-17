@@ -160,9 +160,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         final data = json.decode(resp.body);
         final races = (data['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
 
-        if (races.isEmpty) break; // Plus de données
+        if (races.isEmpty) break;
 
-        // Compter les poles dans cette page
         for (var race in races) {
           final results = (race['QualifyingResults'] ?? []) as List<dynamic>;
           for (var result in results) {
@@ -174,7 +173,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
         offset += limit;
 
-        // Arrêter si on a récupéré moins de 100 résultats (dernière page)
         if (races.length < limit) break;
 
       } catch (e) {
@@ -188,7 +186,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Future<void> fetchDriverCareerStats(String driverId) async {
     try {
-      // Récupérer les résultats de course
       final winsResp = await http.get(
         Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results/1.json'),
       );
@@ -199,7 +196,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results/3.json'),
       );
 
-      // Récupérer les pole positions avec pagination
       final totalPoles = await fetchDriverPoles(driverId);
 
       if (winsResp.statusCode == 200 && p2Resp.statusCode == 200 && p3Resp.statusCode == 200) {
@@ -241,7 +237,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         final data = json.decode(resp.body);
         final races = (data['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
 
-        // Compter les pole positions de la saison
         for (var race in races) {
           final results = (race['QualifyingResults'] ?? []) as List<dynamic>;
           for (var result in results) {
@@ -262,7 +257,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     try {
       final currentYear = DateTime.now().year;
 
-      // Récupérer victoires et résultats pour podiums
       final winsResp = await http.get(
         Uri.parse('https://api.jolpi.ca/ergast/f1/$currentYear/drivers/$driverId/results/1.json'),
       );
@@ -271,7 +265,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         Uri.parse('https://api.jolpi.ca/ergast/f1/$currentYear/drivers/$driverId/results.json'),
       );
 
-      // Récupérer les pole positions de la saison
       final seasonPoles = await fetchDriverSeasonPoles(driverId, currentYear);
 
       if (winsResp.statusCode == 200 && podiumsResp.statusCode == 200) {
@@ -280,7 +273,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
         final seasonWins = int.tryParse(winsData['MRData']['total'] ?? '0') ?? 0;
 
-        // Compter les podiums de la saison
         final races = (podiumsData['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
         int seasonPodiums = 0;
         for (var race in races) {
@@ -606,7 +598,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  // ✅ Widget _buildStatCard ajouté à la fin
   Widget _buildStatCard({
     required String icon,
     required String label,
