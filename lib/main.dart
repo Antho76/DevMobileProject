@@ -15,10 +15,11 @@ Future <void> main() async {
   await initializeDateFormatting('fr_FR', null);
   final prefs = await SharedPreferences.getInstance();
 
-  final hasDriver = prefs.containsKey("favorite_driver");
+  final hasDriverSurname = prefs.containsKey("favorite_driver_surname");
+  final hasDriverName = prefs.containsKey("favorite_driver_name");
   final hasTeam = prefs.containsKey("favorite_team");
 
-  final shouldShowPreferences = !(hasDriver && hasTeam);
+  final shouldShowPreferences = !(hasDriverSurname && hasDriverName && hasTeam);
   runApp(MyApp(showPreferences: shouldShowPreferences));
 
 }
