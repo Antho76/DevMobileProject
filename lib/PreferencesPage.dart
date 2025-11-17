@@ -21,7 +21,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
   List<dynamic> ecuries = [];
   int selectedYear = 2025;
 
-  // ✅ Map pour stocker les images des pilotes (en arrière-plan)
   Map<String, String?> driverImages = {};
 
   @override
@@ -38,7 +37,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Future<String?> fetchDriverImageFromWikipedia(String wikiUrl) async {
-    // REST summary thumbnail
     try {
       final uri = Uri.parse(wikiUrl);
       final segments = uri.pathSegments;
@@ -62,7 +60,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
       }
     } catch (_) {}
 
-    // Fallback og:image
     try {
       final resp = await http.get(Uri.parse(wikiUrl));
       if (resp.statusCode == 200) {
@@ -91,7 +88,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
     }
     setState(() {});
 
-    // ✅ Charger les images en arrière-plan (sans affichage)
     for (final p in pilotes) {
       final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
       final key = _driverKey(driver);
@@ -135,18 +131,16 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
     final prefs = await SharedPreferences.getInstance();
 
-    // ✅ Récupérer l'image depuis le Map driverImages
     final driverKey = _driverKey(selectedDriver!);
     final driverImage = driverImages[driverKey] ?? '';
-
     final driverSurname = selectedDriver?['surname']?.toString() ?? '';
-    // ✅ Sauvegarder l'image récupérée depuis Wikipedia
+
     await prefs.setString("favorite_driver_image", driverImage);
     await prefs.setString(
       "favorite_driver_name",
       "${selectedDriver?['name'] ?? ''} ${selectedDriver?['surname'] ?? ''}".trim(),
     );
-    await prefs.setString("favorite_driver_surname", driverSurname); // ✅ NOUVEAU
+    await prefs.setString("favorite_driver_surname", driverSurname);
     await prefs.setString("favorite_team", selectedTeam!);
 
     if (!mounted) return;
@@ -161,28 +155,54 @@ class _PreferencesPageState extends State<PreferencesPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF0B0C10),
       appBar: AppBar(
-        title: const Text("Choisis ton pilote & ton écurie"),
+        title: const Text("Configuration"),
         backgroundColor: Colors.redAccent,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // ✅ Titre ajouté
+            const Text(
+              "Bienvenue dans ton app F1 🏎️",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+
+            // ✅ Message d'explication ajouté
+            Text(
+              "Avant toute chose, choisis ton pilote et ton écurie favorite. "
+                  "Pas de panique, tu pourras toujours modifier plus tard.",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+
             const Text(
               "Ton pilote préféré",
               style: TextStyle(color: Colors.white, fontSize: 18),
             ),
+            const SizedBox(height: 10),
             DropdownButton<Map<String, dynamic>>(
               dropdownColor: Colors.black,
               value: selectedDriver,
               hint: const Text("Choisir...", style: TextStyle(color: Colors.white70)),
+              isExpanded: true,
               items: pilotes.map((d) {
                 final driver = (d['driver'] ?? {}) as Map<String, dynamic>;
                 final fullName = "${driver['name'] ?? ''} ${driver['surname'] ?? ''}".trim();
 
                 return DropdownMenuItem<Map<String, dynamic>>(
                   value: driver,
-                  // ✅ Seulement le texte, sans l'image
                   child: Text(fullName, style: const TextStyle(color: Colors.white)),
                 );
               }).toList(),
@@ -194,10 +214,12 @@ class _PreferencesPageState extends State<PreferencesPage> {
               "Ton écurie préférée",
               style: TextStyle(color: Colors.white, fontSize: 18),
             ),
+            const SizedBox(height: 10),
             DropdownButton<String>(
               dropdownColor: Colors.black,
               value: selectedTeam,
               hint: const Text("Choisir...", style: TextStyle(color: Colors.white70)),
+              isExpanded: true,
               items: ecuries.map((d) {
                 final team = (d['team'] ?? {}) as Map<String, dynamic>;
                 final teamName = team['teamName']?.toString() ?? "Unknown";
@@ -210,7 +232,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
               onChanged: (value) => setState(() => selectedTeam = value),
             ),
 
-            const Spacer(),
+            const SizedBox(height: 60),
 
             ElevatedButton(
               onPressed: (selectedDriver != null && selectedTeam != null)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math' as math;
 import 'theme_colors.dart';
 
 class HomePage extends StatefulWidget {
@@ -11,20 +12,41 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   String? favoriteDriver;
   String? favoriteTeam;
   String? driverImage;
   String? driverSurname;
 
   Map<String, dynamic>? careerStats;
+  Map<String, dynamic>? seasonStats;
   bool loadingStats = false;
   String? statsError;
+
+  late AnimationController _flipController;
+  late Animation<double> _flipAnimation;
+  bool _showCareerStats = true;
 
   @override
   void initState() {
     super.initState();
+
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _flipAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
+    );
+
     loadPreferences();
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    super.dispose();
   }
 
   Future<void> loadPreferences() async {
@@ -37,15 +59,24 @@ class _HomePageState extends State<HomePage> {
       driverSurname = prefs.getString("favorite_driver_surname");
     });
 
-    // ✅ Debug: Afficher le surname récupéré
-    print('DEBUG: Driver surname = $driverSurname');
-
     if (driverSurname != null && driverSurname!.isNotEmpty) {
       await findDriverIdAndFetchStats(driverSurname!);
     }
   }
 
-  // ✅ VERSION CORRIGÉE: Recherche améliorée du pilote
+  void _flipCard() {
+    if (_flipController.status != AnimationStatus.forward) {
+      if (_showCareerStats) {
+        _flipController.forward();
+      } else {
+        _flipController.reverse();
+      }
+      setState(() {
+        _showCareerStats = !_showCareerStats;
+      });
+    }
+  }
+
   Future<void> findDriverIdAndFetchStats(String surname) async {
     setState(() {
       loadingStats = true;
@@ -53,13 +84,8 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // ✅ Rechercher directement par driverId (format: nom de famille en minuscule)
-      // Ex: "Verstappen" -> "verstappen", "Hamilton" -> "hamilton"
       final driverId = surname.toLowerCase().replaceAll(' ', '_');
 
-      print('DEBUG: Trying driverId = $driverId');
-
-      // Essayer d'abord avec le driverId généré
       final testResp = await http.get(
         Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId.json'),
       );
@@ -69,14 +95,12 @@ class _HomePageState extends State<HomePage> {
         final drivers = (testData['MRData']['DriverTable']['Drivers'] ?? []) as List<dynamic>;
 
         if (drivers.isNotEmpty) {
-          print('DEBUG: Driver found with direct ID');
           await fetchDriverCareerStats(driverId);
+          await fetchDriverSeasonStats(driverId);
           return;
         }
       }
 
-      // ✅ Si ça ne marche pas, rechercher dans la liste complète
-      print('DEBUG: Direct ID failed, searching in full list');
       final searchResp = await http.get(
         Uri.parse('https://api.jolpi.ca/ergast/f1/drivers.json?limit=1000'),
       );
@@ -85,16 +109,10 @@ class _HomePageState extends State<HomePage> {
         final searchData = json.decode(searchResp.body);
         final allDrivers = (searchData['MRData']['DriverTable']['Drivers'] ?? []) as List<dynamic>;
 
-        print('DEBUG: Found ${allDrivers.length} drivers in database');
-
-        // ✅ Chercher avec familyName (pas surname!)
         final matchedDriver = allDrivers.firstWhere(
               (driver) {
             final familyName = (driver['familyName'] ?? '').toString().toLowerCase();
-            final givenName = (driver['givenName'] ?? '').toString().toLowerCase();
             final searchLower = surname.toLowerCase();
-
-            // Recherche flexible: familyName exact ou contient
             return familyName == searchLower ||
                 familyName.contains(searchLower) ||
                 searchLower.contains(familyName);
@@ -104,10 +122,9 @@ class _HomePageState extends State<HomePage> {
 
         if (matchedDriver != null) {
           final foundDriverId = matchedDriver['driverId'] as String;
-          print('DEBUG: Matched driver - driverId: $foundDriverId, familyName: ${matchedDriver['familyName']}');
           await fetchDriverCareerStats(foundDriverId);
+          await fetchDriverSeasonStats(foundDriverId);
         } else {
-          print('DEBUG: No match found for surname: $surname');
           setState(() {
             statsError = "Pilote '$surname' non trouvé";
             loadingStats = false;
@@ -115,12 +132,11 @@ class _HomePageState extends State<HomePage> {
         }
       } else {
         setState(() {
-          statsError = "Erreur de connexion (${searchResp.statusCode})";
+          statsError = "Erreur de connexion";
           loadingStats = false;
         });
       }
     } catch (e) {
-      print('DEBUG: Exception = $e');
       setState(() {
         statsError = "Erreur: $e";
         loadingStats = false;
@@ -128,43 +144,76 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> fetchDriverCareerStats(String driverId) async {
-    try {
-      print('DEBUG: Fetching stats for driverId = $driverId');
+  Future<int> fetchDriverPoles(String driverId) async {
+    int totalPoles = 0;
+    int offset = 0;
+    const int limit = 100;
 
-      final winsResp = await http.get(
-        Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results/1.json'),
-      );
+    while (true) {
+      try {
+        final resp = await http.get(
+          Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/qualifying.json?limit=$limit&offset=$offset'),
+        );
 
-      final polesResp = await http.get(
-        Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/qualifying/1.json'),
-      );
+        if (resp.statusCode != 200) break;
 
-      final podiumsResp = await http.get(
-        Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results.json?limit=1000'),
-      );
+        final data = json.decode(resp.body);
+        final races = (data['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
 
-      if (winsResp.statusCode == 200 && polesResp.statusCode == 200 && podiumsResp.statusCode == 200) {
-        final winsData = json.decode(winsResp.body);
-        final polesData = json.decode(polesResp.body);
-        final podiumsData = json.decode(podiumsResp.body);
+        if (races.isEmpty) break; // Plus de données
 
-        final totalWins = int.tryParse(winsData['MRData']['total'] ?? '0') ?? 0;
-        final totalPoles = int.tryParse(polesData['MRData']['total'] ?? '0') ?? 0;
-
-        final races = (podiumsData['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
-        int totalPodiums = 0;
+        // Compter les poles dans cette page
         for (var race in races) {
-          final results = (race['Results'] ?? []) as List<dynamic>;
-          if (results.isNotEmpty) {
-            final position = int.tryParse(results[0]['position']?.toString() ?? '0') ?? 0;
-            if (position > 0 && position <= 3) {
-              totalPodiums++;
+          final results = (race['QualifyingResults'] ?? []) as List<dynamic>;
+          for (var result in results) {
+            if (result['Driver']['driverId'] == driverId && result['position'] == '1') {
+              totalPoles++;
             }
           }
         }
 
-        print('DEBUG: Stats - Wins: $totalWins, Poles: $totalPoles, Podiums: $totalPodiums');
+        offset += limit;
+
+        // Arrêter si on a récupéré moins de 100 résultats (dernière page)
+        if (races.length < limit) break;
+
+      } catch (e) {
+        print('Error fetching poles: $e');
+        break;
+      }
+    }
+
+    return totalPoles;
+  }
+
+  Future<void> fetchDriverCareerStats(String driverId) async {
+    try {
+      // Récupérer les résultats de course
+      final winsResp = await http.get(
+        Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results/1.json'),
+      );
+      final p2Resp = await http.get(
+        Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results/2.json'),
+      );
+      final p3Resp = await http.get(
+        Uri.parse('https://api.jolpi.ca/ergast/f1/drivers/$driverId/results/3.json'),
+      );
+
+      // Récupérer les pole positions avec pagination
+      final totalPoles = await fetchDriverPoles(driverId);
+
+      if (winsResp.statusCode == 200 && p2Resp.statusCode == 200 && p3Resp.statusCode == 200) {
+        final winsData = json.decode(winsResp.body);
+        final p2Data = json.decode(p2Resp.body);
+        final p3Data = json.decode(p3Resp.body);
+
+        final totalWins = int.tryParse(winsData['MRData']['total'] ?? '0') ?? 0;
+        final p1Count = int.tryParse(winsData['MRData']['total'] ?? '0') ?? 0;
+        final p2Count = int.tryParse(p2Data['MRData']['total'] ?? '0') ?? 0;
+        final p3Count = int.tryParse(p3Data['MRData']['total'] ?? '0') ?? 0;
+        final totalPodiums = p1Count + p2Count + p3Count;
+
+        print('FINAL Career Stats: Wins=$totalWins, Poles=$totalPoles, Podiums=$totalPodiums');
 
         setState(() {
           careerStats = {
@@ -172,18 +221,97 @@ class _HomePageState extends State<HomePage> {
             'poles': totalPoles,
             'podiums': totalPodiums,
           };
+        });
+      }
+    } catch (e) {
+      print('Error fetching career stats: $e');
+    }
+  }
+
+
+  Future<int> fetchDriverSeasonPoles(String driverId, int year) async {
+    int seasonPoles = 0;
+
+    try {
+      final resp = await http.get(
+        Uri.parse('https://api.jolpi.ca/ergast/f1/$year/drivers/$driverId/qualifying.json'),
+      );
+
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        final races = (data['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
+
+        // Compter les pole positions de la saison
+        for (var race in races) {
+          final results = (race['QualifyingResults'] ?? []) as List<dynamic>;
+          for (var result in results) {
+            if (result['Driver']['driverId'] == driverId && result['position'] == '1') {
+              seasonPoles++;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Error fetching season poles: $e');
+    }
+
+    return seasonPoles;
+  }
+
+  Future<void> fetchDriverSeasonStats(String driverId) async {
+    try {
+      final currentYear = DateTime.now().year;
+
+      // Récupérer victoires et résultats pour podiums
+      final winsResp = await http.get(
+        Uri.parse('https://api.jolpi.ca/ergast/f1/$currentYear/drivers/$driverId/results/1.json'),
+      );
+
+      final podiumsResp = await http.get(
+        Uri.parse('https://api.jolpi.ca/ergast/f1/$currentYear/drivers/$driverId/results.json'),
+      );
+
+      // Récupérer les pole positions de la saison
+      final seasonPoles = await fetchDriverSeasonPoles(driverId, currentYear);
+
+      if (winsResp.statusCode == 200 && podiumsResp.statusCode == 200) {
+        final winsData = json.decode(winsResp.body);
+        final podiumsData = json.decode(podiumsResp.body);
+
+        final seasonWins = int.tryParse(winsData['MRData']['total'] ?? '0') ?? 0;
+
+        // Compter les podiums de la saison
+        final races = (podiumsData['MRData']['RaceTable']['Races'] ?? []) as List<dynamic>;
+        int seasonPodiums = 0;
+        for (var race in races) {
+          final results = (race['Results'] ?? []) as List<dynamic>;
+          if (results.isNotEmpty) {
+            final position = int.tryParse(results[0]['position']?.toString() ?? '0') ?? 0;
+            if (position > 0 && position <= 3) {
+              seasonPodiums++;
+            }
+          }
+        }
+
+        print('DEBUG Season $currentYear Stats: Wins=$seasonWins, Poles=$seasonPoles, Podiums=$seasonPodiums');
+
+        setState(() {
+          seasonStats = {
+            'wins': seasonWins,
+            'poles': seasonPoles,
+            'podiums': seasonPodiums,
+            'year': currentYear,
+          };
           loadingStats = false;
         });
       } else {
         setState(() {
-          statsError = "Erreur de chargement (${winsResp.statusCode})";
           loadingStats = false;
         });
       }
     } catch (e) {
-      print('DEBUG: Stats exception = $e');
+      print('Error fetching season stats: $e');
       setState(() {
-        statsError = "Erreur réseau";
         loadingStats = false;
       });
     }
@@ -306,46 +434,25 @@ class _HomePageState extends State<HomePage> {
                   ),
                   textAlign: TextAlign.center,
                 )
-              else if (careerStats != null)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: ThemeColors.card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ThemeColors.desactive),
-                    ),
-                    child: Column(
-                      children: [
-                        const Text(
-                          "📊 Statistiques de carrière",
-                          style: TextStyle(
-                            color: ThemeColors.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _buildStatCard(
-                              icon: "🏆",
-                              label: "Victoires",
-                              value: careerStats!['wins'].toString(),
-                            ),
-                            _buildStatCard(
-                              icon: "⚡",
-                              label: "Poles",
-                              value: careerStats!['poles'].toString(),
-                            ),
-                            _buildStatCard(
-                              icon: "🥇",
-                              label: "Podiums",
-                              value: careerStats!['podiums'].toString(),
-                            ),
-                          ],
-                        ),
-                      ],
+              else if (careerStats != null || seasonStats != null)
+                  GestureDetector(
+                    onTap: _flipCard,
+                    child: AnimatedBuilder(
+                      animation: _flipAnimation,
+                      builder: (context, child) {
+                        final angle = _flipAnimation.value * math.pi;
+                        final transform = Matrix4.identity()
+                          ..setEntry(3, 2, 0.001)
+                          ..rotateY(angle);
+
+                        return Transform(
+                          transform: transform,
+                          alignment: Alignment.center,
+                          child: angle >= math.pi / 2
+                              ? _buildSeasonStatsCard()
+                              : _buildCareerStatsCard(),
+                        );
+                      },
                     ),
                   ),
 
@@ -375,6 +482,131 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildCareerStatsCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ThemeColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ThemeColors.desactive),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                "📊 Statistiques de carrière",
+                style: TextStyle(
+                  color: ThemeColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.flip,
+                size: 16,
+                color: Colors.white.withOpacity(0.5),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (careerStats != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildStatCard(
+                  icon: "🏆",
+                  label: "Victoires",
+                  value: careerStats!['wins'].toString(),
+                ),
+                _buildStatCard(
+                  icon: "⚡",
+                  label: "Poles",
+                  value: careerStats!['poles'].toString(),
+                ),
+                _buildStatCard(
+                  icon: "🥇",
+                  label: "Podiums",
+                  value: careerStats!['podiums'].toString(),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSeasonStatsCard() {
+    return Transform(
+      transform: Matrix4.rotationY(math.pi),
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: ThemeColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orangeAccent),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  "🏁 Saison ${seasonStats?['year'] ?? DateTime.now().year}",
+                  style: const TextStyle(
+                    color: Colors.orangeAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.flip,
+                  size: 16,
+                  color: Colors.white.withOpacity(0.5),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (seasonStats != null)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildStatCard(
+                    icon: "🏆",
+                    label: "Victoires",
+                    value: seasonStats!['wins'].toString(),
+                  ),
+                  _buildStatCard(
+                    icon: "⚡",
+                    label: "Poles",
+                    value: seasonStats!['poles'].toString(),
+                  ),
+                  _buildStatCard(
+                    icon: "🥇",
+                    label: "Podiums",
+                    value: seasonStats!['podiums'].toString(),
+                  ),
+                ],
+              )
+            else
+              const Text(
+                "Aucune donnée pour cette saison",
+                style: TextStyle(
+                  color: ThemeColors.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ Widget _buildStatCard ajouté à la fin
   Widget _buildStatCard({
     required String icon,
     required String label,
