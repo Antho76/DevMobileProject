@@ -50,10 +50,13 @@ class _ClassementPageState extends State<ClassementPage> {
 
   Future<void> _loadPreferencesAndData() async {
     final prefs = await SharedPreferences.getInstance();
-    _favoriteDriverName = prefs.getString("favorite_driver");
+
+    _favoriteDriverName = prefs.getString("favorite_driver_name");
     _favoriteTeamName = prefs.getString("favorite_team");
+
     await fetchData();
   }
+
 
   String _driverKey(Map<String, dynamic> driver) {
     final name = (driver['name'] ?? '').toString().trim();
@@ -654,11 +657,28 @@ class _ClassementPageState extends State<ClassementPage> {
 
     final prefs = await SharedPreferences.getInstance();
     if (displayName == null) {
-      await prefs.remove("favorite_driver");
+      await prefs.remove("favorite_driver_name");
+      await prefs.remove("favorite_driver_surname");
+      await prefs.remove("favorite_driver_image");
     } else {
-      await prefs.setString("favorite_driver", displayName);
+      await prefs.setString("favorite_driver_name", displayName);
+
+      // Chercher le pilote dans la liste pour récupérer surname et image
+      for (final p in pilotes) {
+        final driver = (p['driver'] ?? {}) as Map<String, dynamic>;
+        if (_driverDisplayName(driver) == displayName) {
+          final surname = driver['surname']?.toString() ?? '';
+          final driverKey = _driverKey(driver);
+          final image = driverImages[driverKey] ?? '';
+
+          await prefs.setString("favorite_driver_surname", surname);
+          await prefs.setString("favorite_driver_image", image);
+          break;
+        }
+      }
     }
   }
+
 
   Future<void> _updateFavoriteTeam(String? key, String? name) async {
     _favoriteTeamKey = key;
