@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
 import 'home_page.dart';
 import 'main.dart';
 
@@ -189,7 +192,8 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
             const Text(
               "Ton pilote préféré",
-              style: TextStyle(color: Colors.white, fontSize: 18),
+              style:
+              TextStyle(color: Colors.white, fontSize: 18),
             ),
             const SizedBox(height: 10),
             DropdownButton<Map<String, dynamic>>(
@@ -206,13 +210,14 @@ class _PreferencesPageState extends State<PreferencesPage> {
                   child: Text(fullName, style: const TextStyle(color: Colors.white)),
                 );
               }).toList(),
-              onChanged: (value) => setState(() => selectedDriver = value),
+              onChanged: (value) =>
+                  setState(() => selectedDriver = value),
             ),
             const SizedBox(height: 40),
-
             const Text(
               "Ton écurie préférée",
-              style: TextStyle(color: Colors.white, fontSize: 18),
+              style:
+              TextStyle(color: Colors.white, fontSize: 18),
             ),
             const SizedBox(height: 10),
             DropdownButton<String>(
@@ -229,7 +234,8 @@ class _PreferencesPageState extends State<PreferencesPage> {
                   child: Text(teamName, style: const TextStyle(color: Colors.white)),
                 );
               }).toList(),
-              onChanged: (value) => setState(() => selectedTeam = value),
+              onChanged: (value) =>
+                  setState(() => selectedTeam = value),
             ),
 
             const SizedBox(height: 60),
@@ -245,7 +251,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
               ),
               child: const Text(
                 "Valider",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
